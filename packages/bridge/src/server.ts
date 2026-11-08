@@ -3,6 +3,7 @@ import { randomBytes } from "node:crypto";
 import { WebSocketServer, type WebSocket } from "ws";
 import type {
 	ClientMessage,
+	McpResult,
 	PackagesResult,
 	PermissionsResult,
 	PiCommand,
@@ -14,6 +15,7 @@ import type {
 import { resolveCommand } from "./commands.ts";
 import { gitDiff, gitStatus } from "./git.ts";
 import { memoryContext, memoryProjects, memorySearch, type MemoryOptions } from "./memory.ts";
+import { mcpApply, mcpList, mcpPreview, type McpOptions } from "./mcp.ts";
 import { packagesApply, packagesList, packagesPreview, type PackagesOptions } from "./packages.ts";
 import { permissionsSetDefault, permissionsStatus, type PermissionsOptions } from "./permissions.ts";
 import {
@@ -66,6 +68,8 @@ export interface BridgeServerOptions {
 	readonly settings?: SettingsOptions;
 	/** The agent's packages list, and where its backups go; a test points this at a scratch pair of homes. */
 	readonly packages?: PackagesOptions;
+	/** The agent's MCP servers, in the same homes and behind the same confirmation. */
+	readonly mcp?: McpOptions;
 }
 
 export interface BridgeServerHandle {
@@ -207,6 +211,17 @@ export async function startBridgeServer(options: BridgeServerOptions = {}): Prom
 		if (message.kind === "packages") {
 			try {
 				await dispatchPackages(socket, message);
+			} catch (error) {
+				send(socket, { kind: "error", id: message.id, message: errorMessage(error) });
+			}
+			return;
+		}
+
+		// The MCP servers are the family that holds credentials. Same two requests, same digest, and every
+		// secret stays on this side of the wire: what `mcp.ts` answers is already redacted.
+		if (message.kind === "mcp") {
+			try {
+				await dispatchMcp(socket, message);
 			} catch (error) {
 				send(socket, { kind: "error", id: message.id, message: errorMessage(error) });
 			}
@@ -503,6 +518,45 @@ export async function startBridgeServer(options: BridgeServerOptions = {}): Prom
 				});
 			default:
 				throw new Error(`unsupported packages action: ${String((message as { action?: unknown }).action)}`);
+		}
+	}
+
+	/**
+	 * The MCP servers: one read, and a write in two requests, exactly as the packages list.
+	 *
+	 * `preview` writes nothing and answers with the plan and the digest the confirmation shows; `apply`
+	 * repeats the operation, the name and the fields the user confirmed, plus that digest. Everything
+	 * that decides what a server may be is `mcp.ts`'s, on this side of the wire, and so is the redaction
+	 * of every value that could hold a credential.
+	 */
+	async function dispatchMcp(socket: WebSocket, message: Extract<ClientMessage, { kind: "mcp" }>): Promise<void> {
+		const mcpOptions = options.mcp ?? {};
+		const reply = (answer: McpResult): void => send(socket, { kind: "mcp", id: message.id, ...answer });
+
+		switch (message.action) {
+			case "list":
+				return reply({ action: "list", data: await mcpList(workspace, mcpOptions) });
+			case "preview":
+				return reply({
+					action: "preview",
+					data: await mcpPreview(
+						workspace,
+						{ operation: message.operation, name: message.name, ...(message.server === undefined ? {} : { server: message.server }) },
+						mcpOptions,
+					),
+				});
+			case "apply":
+				return reply({
+					action: "apply",
+					data: await mcpApply(
+						workspace,
+						{ operation: message.operation, name: message.name, ...(message.server === undefined ? {} : { server: message.server }) },
+						message.digest,
+						mcpOptions,
+					),
+				});
+			default:
+				throw new Error(`unsupported mcp action: ${String((message as { action?: unknown }).action)}`);
 		}
 	}
 

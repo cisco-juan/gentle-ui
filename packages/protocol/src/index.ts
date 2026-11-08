@@ -631,6 +631,75 @@ export interface PackagesView {
 	readonly backup: string | null;
 }
 
+/**
+ * The agent's `mcp.json`, as the settings sheet edits it.
+ *
+ * The same two steps as `packages`: `preview` returns a plan and its digest, `apply` sends that digest
+ * back. This is the family that handles credentials, so nothing that leaves the bridge carries one: the
+ * server list and the change are projections with `<redacted>` in place of every header and environment
+ * value, the plan names fields rather than values, and the file's own text is never sent.
+ *
+ * An `update` is a patch, not a whole entry: a field the request does not mention is kept exactly as it
+ * is on disk. That is what lets a header hold a secret the sheet never sees — the panel edits the
+ * command and never has to send the token back.
+ */
+export type McpState = "ok" | "refused" | "unavailable";
+
+export type McpOperation = "add" | "update" | "remove";
+
+/**
+ * The fields of one server a request may set.
+ *
+ * Deliberately not the whole entry: `oauth`, `auth` and `toolExposure` are left where they are, because
+ * they carry credentials or a nested shape a confirmation cannot show, and the transport is named
+ * instead of `type` so the request says what the server is rather than how Pi spells it.
+ *
+ * A field that is present replaces what is on disk (`headers: {}` removes them all); a field that is
+ * absent is kept as it is. A secret therefore never has to travel to the panel and back.
+ */
+export interface McpServerPatch {
+	/** Which transport this server speaks. Required by `add`; an `update` sets it only to change it. */
+	readonly transport?: "stdio" | "http";
+	/** The command a stdio server runs. */
+	readonly command?: string;
+	readonly args?: readonly string[];
+	readonly cwd?: string;
+	/** Environment a stdio server is started with; the values are secrets and are never sent back. */
+	readonly env?: Readonly<Record<string, string>>;
+	/** The URL of an http server; credentials in it are cut out of every projection. */
+	readonly url?: string;
+	/** Headers an http server is called with; the values are secrets and are never sent back. */
+	readonly headers?: Readonly<Record<string, string>>;
+	readonly enabled?: boolean;
+	readonly exposure?: string;
+	readonly description?: string;
+}
+
+/** What a plan changes: one server as it was and as it would be, both already redacted. */
+export interface McpChange {
+	readonly before: SettingsMcpServer | null;
+	readonly after: SettingsMcpServer | null;
+}
+
+export interface McpView {
+	readonly state: McpState;
+	readonly reason: ConfigFailureReason | null;
+	readonly message: string;
+	/** `<agentHome>/mcp.json`, the file this family writes. */
+	readonly path: string;
+	/** False while the file does not exist yet; an apply creates it. */
+	readonly stored: boolean;
+	/** Every server on disk, redacted. Empty when the file could not be read; the state says which. */
+	readonly servers: readonly SettingsMcpServer[];
+	readonly notes: readonly string[];
+	/** The confirmation: present for `preview` and `apply`, null for `list`, refused and unavailable. */
+	readonly plan: ConfigPlanView | null;
+	/** What that plan changes; null when there is no plan. */
+	readonly change: McpChange | null;
+	/** Where the bytes this apply replaced were kept; null when nothing was written. */
+	readonly backup: string | null;
+}
+
 export type ClientMessage =
 	| ({ readonly kind: "open"; readonly id: string } & OpenThreadRequest)
 	| { readonly kind: "close"; readonly threadId: string }
@@ -691,6 +760,25 @@ export type ClientMessage =
 			readonly action: "apply";
 			readonly operation: PackagesOperation;
 			readonly source: string;
+			readonly digest: string;
+	  }
+	/** The MCP servers: read them, plan one add, edit or removal, or apply the confirmed plan. */
+	| { readonly kind: "mcp"; readonly id: string; readonly action: "list" }
+	| {
+			readonly kind: "mcp";
+			readonly id: string;
+			readonly action: "preview";
+			readonly operation: McpOperation;
+			readonly name: string;
+			readonly server?: McpServerPatch;
+	  }
+	| {
+			readonly kind: "mcp";
+			readonly id: string;
+			readonly action: "apply";
+			readonly operation: McpOperation;
+			readonly name: string;
+			readonly server?: McpServerPatch;
 			readonly digest: string;
 	  }
 	/** Profiles. Every mutation answers with the whole list as it now is on disk. */
@@ -765,6 +853,10 @@ export type ServerMessage =
 			readonly kind: "packages";
 			readonly id: string;
 	  } & PackagesResult)
+	| ({
+			readonly kind: "mcp";
+			readonly id: string;
+	  } & McpResult)
 	| { readonly kind: "error"; readonly id?: string; readonly message: string };
 
 /** One memory answer, tagged with the action that asked for it. */
@@ -781,6 +873,9 @@ export type SettingsResult = { readonly action: "read"; readonly data: SettingsV
 
 /** One packages answer, tagged with the action that asked for it. */
 export type PackagesResult = { readonly action: "list" | "preview" | "apply"; readonly data: PackagesView };
+
+/** One MCP answer, tagged with the action that asked for it. */
+export type McpResult = { readonly action: "list" | "preview" | "apply"; readonly data: McpView };
 
 /** One profiles answer, tagged with the action that asked for it. */
 export type ProfilesResult =
