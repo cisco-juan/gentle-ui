@@ -55,7 +55,7 @@ export function SettingsSheet(props: {
 				<h3>Agent settings</h3>
 				<p class="muted">
 					Model, profile and permission mode are live in the composer. Packages, skills and MCP servers are
-					read from the agent's own configuration; a full editor lands with the palette work.
+					read from the agent's own configuration; this shell does not edit them yet.
 				</p>
 			</section>
 		</Sheet>
