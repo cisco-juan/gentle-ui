@@ -14,7 +14,9 @@
  *   └── manifest.json           what was packed, for support
  *
  * Every failure is loud and leaves no partial bundle behind: the work happens in a temporary
- * directory outside the worktree and is moved into place only once it is complete.
+ * directory outside the worktree and is moved into place only once it is complete. The dependency tree
+ * is installed with pnpm's **hoisted** linker and asserted to be free of symlinks, because Tauri copies
+ * `bridge/` as a resource tree and cannot follow the links pnpm's default isolated layout leaves behind.
  */
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -23,6 +25,7 @@ import {
 	cpSync,
 	createWriteStream,
 	existsSync,
+	lstatSync,
 	mkdirSync,
 	mkdtempSync,
 	readdirSync,
@@ -33,7 +36,7 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { arch as hostArch, platform as hostPlatform, tmpdir } from "node:os";
-import { dirname, join, relative } from "node:path";
+import { dirname, join, relative, resolve, sep } from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { fileURLToPath } from "node:url";
@@ -66,6 +69,14 @@ const SUPPORTED = {
 /** Dependencies the bridge resolves at runtime; a bundle without them starts and then dies. */
 const REQUIRED_DEPENDENCIES = ["ws", "@earendil-works/pi-coding-agent"];
 
+/**
+ * pnpm's default (isolated) layout keeps the dependency tree in `node_modules/.pnpm` and links every
+ * package into place. Tauri packs `bridge/` as a resource tree and cannot follow those links, so the
+ * release build fails with "resource path '<...>/json-schema-to-ts' doesn't exist". A hoisted install
+ * writes plain directories and files instead, which is the only shape the bundler can copy.
+ */
+const HOISTED_INSTALL = "--node-linker=hoisted";
+
 async function main() {
 	const argv = process.argv.slice(2);
 	if (argv.includes("--help") || argv.includes("-h")) {
@@ -83,7 +94,6 @@ async function main() {
 
 	const archiveName = `node-v${NODE_VERSION}-${platform.nodeOs}-${platform.nodeArch}.${platform.archive}`;
 	const archiveUrl = `${DIST_BASE}/v${NODE_VERSION}/${archiveName}`;
-	const entryInsideArchive = join(`node-v${NODE_VERSION}-${platform.nodeOs}-${platform.nodeArch}`, "bin", platform.binary);
 
 	if (argv.includes("--plan")) {
 		// Resolution without touching the network: what would be downloaded and where it would land.
@@ -98,10 +108,10 @@ async function main() {
 		return;
 	}
 
-	await prepare(platformId, platform, { archiveName, archiveUrl, entryInsideArchive });
+	await prepare(platformId, platform, { archiveName, archiveUrl });
 }
 
-async function prepare(platformId, platform, { archiveName, archiveUrl, entryInsideArchive }) {
+async function prepare(platformId, platform, { archiveName, archiveUrl }) {
 	const scratch = mkdtempSync(join(tmpdir(), "gentle-sidecar-"));
 	process.stdout.write(`${PREFIX} working in ${scratch}\n`);
 
@@ -116,8 +126,16 @@ async function prepare(platformId, platform, { archiveName, archiveUrl, entryIns
 		// every platform without a native unzip dependency.
 		run("tar", ["-xf", archivePath, "-C", extracted], { label: `extract ${archiveName}` });
 
-		const nodeBinary = join(extracted, entryInsideArchive);
-		if (!existsSync(nodeBinary)) fail(`${archiveName} did not contain ${entryInsideArchive}`);
+		// The archive layout is not uniform: unix tarballs put the runtime in `bin/`, the official
+		// Windows zip puts `node.exe` at the root of the versioned directory. Search for it instead of
+		// trusting one path, and report what was found.
+		const entries = listFiles(extracted);
+		const entry = chooseNodeEntry(entries, platform.binary);
+		if (entry === null) failMissingRuntime(archiveName, platform.binary, entries);
+		process.stdout.write(`${PREFIX} found runtime ${entry} inside ${archiveName}\n`);
+
+		const nodeBinary = join(extracted, ...entry.split("/"));
+		if (!existsSync(nodeBinary)) fail(`${archiveName} listed ${entry} but it is not on disk after extraction`);
 		if (platformId === `${hostPlatform()}-${hostArch()}`) {
 			const reported = run(nodeBinary, ["--version"], { label: `check ${archiveName}`, capture: true }).stdout.trim();
 			if (reported !== `v${NODE_VERSION}`) fail(`${archiveName} reported "${reported}", expected v${NODE_VERSION}`);
@@ -125,21 +143,41 @@ async function prepare(platformId, platform, { archiveName, archiveUrl, entryIns
 
 		const payload = stagePayload(scratch);
 		assertPayload(payload.dir);
+		const payloadTree = inspectTree(payload.dir);
+		if (payloadTree.firstLink !== null) {
+			fail(
+				`the production install left a symlink behind: ${show(payloadTree.firstLink)}\n` +
+					`  Tauri copies bridge/ as a resource tree and cannot follow links, so a bundle like this one\n` +
+					`  fails the release build with "resource path ... doesn't exist". No bundle was produced.`,
+			);
+		}
 
 		const staged = join(scratch, "bridge");
 		mkdirSync(join(staged, "app"), { recursive: true });
 		cpSync(payload.dir, join(staged, "app"), { recursive: true, dereference: true });
 		cpSync(nodeBinary, join(staged, platform.target));
 		chmodSync(join(staged, platform.target), 0o755);
+
+		// The bundle is what ships, so it is inspected as a whole: the copy above dereferences links, and
+		// this is the assertion that says so on the tree Tauri will actually read.
+		const bundleTree = inspectTree(join(staged, "app"));
+		if (bundleTree.firstLink !== null) {
+			fail(
+				`the staged bundle still contains a symlink: ${show(bundleTree.firstLink)}\n` +
+					`  Tauri copies bridge/ as a resource tree and cannot follow links. No bundle was produced.`,
+			);
+		}
+
 		writeFileSync(
 			join(staged, "manifest.json"),
 			`${JSON.stringify(
-				{
+				buildManifest({
 					nodeVersion: NODE_VERSION,
-					platform: platformId,
+					platformId,
 					arch: platform.nodeArch,
 					bridgeVersion: JSON.parse(readFileSync(bridgeManifestPath, "utf8")).version,
-				},
+					files: bundleTree.files,
+				}),
 				null,
 				2,
 			)}\n`,
@@ -155,8 +193,9 @@ async function prepare(platformId, platform, { archiveName, archiveUrl, entryIns
 		process.stdout.write(
 			`${PREFIX} done\n` +
 				`  bundle      ${show(bundleDir)}\n` +
-				`  runtime     node ${NODE_VERSION} (${platformId})\n` +
+				`  runtime     node ${NODE_VERSION} (${platformId}) from ${entry}\n` +
 				`  payload     ${payload.via}\n` +
+				`  links       none: ${bundleTree.files} real files and directories, no symlinks (Tauri-safe)\n` +
 				`  size        ${megabytes(bundleDir)} MB\n` +
 				`  entry       ${relative(process.cwd(), join(bundleDir, "app", "dist", "main.js"))}\n`,
 		);
@@ -166,22 +205,32 @@ async function prepare(platformId, platform, { archiveName, archiveUrl, entryIns
 }
 
 /**
- * Stage the bridge with production dependencies only. `pnpm deploy` is the supported path because it
- * resolves the workspace graph itself; the manual path exists for pnpm versions where `deploy` needs a
- * different flag, and drops `workspace:` dependencies because the bridge imports
- * `@gentle-shell/protocol` as types only (nothing from it is loaded at runtime).
+ * Stage the bridge with production dependencies only, and with a tree Tauri can copy.
+ *
+ * `pnpm deploy` is the supported way to resolve the workspace graph: it pins every version from the
+ * workspace lockfile. Its default (isolated) layout is a forest of symlinks into `node_modules/.pnpm`,
+ * which the bundler cannot follow, so the deployed target is then re-installed in place with the
+ * hoisted linker. Asking `deploy` for `--node-linker=hoisted` directly is not an option: that performs
+ * a *workspace-wide* production install, which prunes the devDependencies of the checkout running it
+ * (observed: the desktop's `@tauri-apps/cli` and the bridge's `typescript` disappeared, so the
+ * preceding `pnpm build` of a release run would have no vite either). `deploy --legacy` is not
+ * attempted for the same reason.
+ *
+ * The manual path is the fallback when `deploy` is unavailable on the installed pnpm: it drops
+ * `workspace:` dependencies because the bridge imports `@gentle-shell/protocol` as types only (nothing
+ * from it is loaded at runtime) and installs hoisted from a `.npmrc` in the staging directory.
  */
 function stagePayload(scratch) {
-	const attempts = [
-		["--filter", "@gentle-shell/bridge", "deploy", "--prod", "--legacy"],
-		["--filter", "@gentle-shell/bridge", "deploy", "--prod"],
-	];
-	for (const [index, args] of attempts.entries()) {
-		const target = join(scratch, `payload-${index}`);
-		const result = spawnSync("pnpm", [...args, target], { cwd: repoRoot, encoding: "utf8", shell: needsShell() });
-		if (result.status === 0 && existsSync(join(target, "dist", "main.js"))) {
-			return { dir: target, via: `pnpm ${args.join(" ")}` };
-		}
+	const target = join(scratch, "payload-deploy");
+	const deployArgs = ["--filter", "@gentle-shell/bridge", "deploy", "--prod"];
+	const result = spawnSync("pnpm", [...deployArgs, target], { cwd: repoRoot, encoding: "utf8", shell: needsShell() });
+	if (result.status === 0 && existsSync(join(target, "dist", "main.js"))) {
+		// Same resolved versions as the deploy, relaid out as real directories and files. The lockfile
+		// the deploy wrote is what pins them, so this is a re-layout, not a fresh resolution.
+		run("pnpm", ["--dir", target, "install", "--prod", "--ignore-scripts", HOISTED_INSTALL], {
+			label: "rewrite the deployed payload as real files (hoisted link)",
+		});
+		return { dir: target, via: `pnpm ${deployArgs.join(" ")}, then ${HOISTED_INSTALL} in the target` };
 	}
 
 	process.stdout.write(`${PREFIX} pnpm deploy unavailable here; staging the payload by hand\n`);
@@ -196,10 +245,14 @@ function stagePayload(scratch) {
 	}
 	manifest.private = true;
 	writeFileSync(join(dir, "package.json"), `${JSON.stringify(manifest, null, 2)}\n`);
-	run("pnpm", ["--dir", dir, "install", "--prod", "--ignore-scripts", "--no-frozen-lockfile"], {
+	// The config file states the linker the flag already asks for, so a pnpm that ignores the flag
+	// still installs a tree the bundler can copy. It is removed again: it is not payload.
+	writeFileSync(join(dir, ".npmrc"), `node-linker=hoisted\n`);
+	run("pnpm", ["--dir", dir, "install", "--prod", "--ignore-scripts", "--no-frozen-lockfile", HOISTED_INSTALL], {
 		label: "install production dependencies",
 	});
-	return { dir, via: "manual staging plus pnpm install --prod" };
+	rmSync(join(dir, ".npmrc"), { force: true });
+	return { dir, via: `manual staging plus pnpm install --prod ${HOISTED_INSTALL}` };
 }
 
 function assertPayload(dir) {
@@ -212,6 +265,98 @@ function assertPayload(dir) {
 			fail(`the staged bridge cannot resolve ${dependency}; the bundle would start and then crash`);
 		}
 	}
+}
+
+/**
+ * Every file and symlink under `root`, relative and POSIX-separated. Links are entries, not doors: the
+ * walk never follows one, because whether any exist is exactly what the caller needs to know.
+ */
+function listFiles(root) {
+	const entries = [];
+	const walk = (dir) => {
+		for (const entry of readdirSync(dir, { withFileTypes: true })) {
+			const full = join(dir, entry.name);
+			if (entry.isDirectory()) {
+				walk(full);
+				continue;
+			}
+			entries.push(relative(root, full).split(sep).join("/"));
+		}
+	};
+	walk(root);
+	return entries;
+}
+
+/**
+ * The runtime inside an extracted Node archive, or null when the archive does not have it.
+ *
+ * Unix tarballs ship `bin/node`; the official Windows zip ships `node.exe` at the root of the
+ * versioned directory. Both are searched for by shape rather than assumed, and the shallowest match
+ * wins so a `bin/node` repeated inside the bundled npm tree cannot be mistaken for the runtime.
+ */
+export function chooseNodeEntry(entries, binary) {
+	const wanted = binary === "node.exe" ? "node.exe" : "bin/node";
+	const matches = entries
+		.map((entry) => String(entry).replace(/\\/g, "/"))
+		.filter((entry) => entry === wanted || entry.endsWith(`/${wanted}`));
+	matches.sort((left, right) => depth(left) - depth(right) || left.localeCompare(right));
+	return matches[0] ?? null;
+}
+
+/** The archive's top-level entries, which is what a human needs to see when nothing matched. */
+export function topLevelEntries(entries) {
+	const tops = new Set();
+	for (const entry of entries) {
+		const [top] = String(entry).replace(/\\/g, "/").split("/");
+		if (top !== undefined && top !== "") tops.add(top);
+	}
+	return [...tops].sort();
+}
+
+/** The first path that is a symlink, or null when every path is a real file or directory. */
+export function firstSymlink(paths, isLink = isSymlink) {
+	for (const path of paths) {
+		if (isLink(path)) return path;
+	}
+	return null;
+}
+
+function isSymlink(path) {
+	try {
+		return lstatSync(path).isSymbolicLink();
+	} catch {
+		// A link whose target is missing still has to be reported, and lstat does not follow it, so a
+		// throw here means the entry vanished mid-walk rather than that it is not a link.
+		return false;
+	}
+}
+
+/** File count and the first symlink of a staged tree, for the assertion and the manifest. */
+function inspectTree(root) {
+	const entries = listFiles(root);
+	return { files: entries.length, firstLink: firstSymlink(entries.map((entry) => join(root, ...entry.split("/")))) };
+}
+
+/**
+ * What the bundle records about itself. `linkFree` and `files` are the two facts a support engineer
+ * needs when a packaged app cannot start: whether the tree Tauri packed is the shape it can copy, and
+ * how much of it there was.
+ */
+export function buildManifest({ nodeVersion, platformId, arch, bridgeVersion, files }) {
+	return { nodeVersion, platform: platformId, arch, bridgeVersion, linkFree: true, files };
+}
+
+function depth(entry) {
+	return entry.split("/").length;
+}
+
+function failMissingRuntime(archiveName, binary, entries) {
+	const tops = topLevelEntries(entries);
+	fail(
+		`${archiveName} contains no ${binary}, so there is no runtime to bundle.\n` +
+			`  top-level entries in the archive: ${tops.length === 0 ? "(none)" : tops.join(", ")}\n` +
+			`  run with --plan to see which archive this platform expects`,
+	);
 }
 
 async function download(url, destination) {
@@ -327,4 +472,7 @@ function printUsage() {
 	);
 }
 
-await main();
+/** Only run when executed: the test file imports the pure helpers above. */
+if (process.argv[1] !== undefined && fileURLToPath(import.meta.url) === resolve(process.argv[1])) {
+	await main();
+}

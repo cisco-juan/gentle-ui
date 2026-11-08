@@ -98,7 +98,7 @@ bridge/
 │   ├── dist/*.js
 │   ├── node_modules/         # production dependencies only (ws, the pinned harness)
 │   └── package.json
-└── manifest.json             # { nodeVersion, platform, arch, bridgeVersion }
+└── manifest.json             # { nodeVersion, platform, arch, bridgeVersion, linkFree, files }
 ```
 
 The directory is tracked by a single `.gitkeep` marker and otherwise gitignored. The marker is not
@@ -142,17 +142,26 @@ trust. Steps:
 
    The version is pinned in the script (currently the 22.x LTS line) and overridable with
    `NODE_SIDECAR_VERSION` for a controlled bump; it is not inherited from the developer's machine.
+   The layout of the archive is not assumed: the binary is found by name anywhere under the extracted
+   root (`bin/node` on unix, `node.exe` on Windows, no `bin/` directory there), and a miss fails listing
+   the archive's top-level entries.
 2. Download that archive from `https://nodejs.org/dist/v<a.b.c>/`, verify it against `SHASUMS256.txt`
    from the same directory, and extract into a fresh `mkdtemp` directory outside the worktree. Network
    or checksum failure: loud failure, nothing written to `src-tauri/`.
 3. Build the bridge: `pnpm --filter @gentle-shell/bridge build`.
 4. Lay out the production payload into `bridge/app/`: `pnpm --filter @gentle-shell/bridge deploy --prod`
-   (which materialises the workspace package with its production dependencies), retried without
-   `--legacy`, or — when neither `deploy` form works on the installed pnpm — a copy of `dist/` plus a
+   materialises the workspace package with its production dependencies, and the deployed target is then
+   re-installed in place with `--node-linker=hoisted`. The second install is not cosmetic: pnpm's default
+   isolated layout is a forest of symlinks, and Tauri copies `bridge/` as a resource tree without
+   following them — a release build failed on
+   `resource path '.../node_modules/.pnpm/.../json-schema-to-ts' doesn't exist` before this. The bundle is
+   therefore hoisted, and the script walks both the payload and the staged bundle and fails naming the
+   first symlink that survives. When `deploy` does not work on the installed pnpm, a copy of `dist/` plus a
    `package.json` with the `workspace:` dependencies dropped (the bridge imports
-   `@gentle-shell/protocol` as types only) and a `pnpm install --prod` inside the staged directory.
-   Either way the result must contain `app/dist/main.js` and resolvable `ws` and
-   `@earendil-works/pi-coding-agent`; the script asserts all three and fails otherwise.
+   `@gentle-shell/protocol` as types only) and a hoisted `pnpm install --prod` in the staged directory does
+   the same job.
+   Either way the result must contain `app/dist/main.js`, resolvable `ws` and
+   `@earendil-works/pi-coding-agent`, and no symlink at all; the script asserts that and fails otherwise.
 5. Copy the Node binary to `bridge/node(.exe)`, set the executable bit on POSIX, write
    `manifest.json`, print the produced paths and sizes, and remove the scratch directory.
 

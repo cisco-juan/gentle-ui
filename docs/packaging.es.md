@@ -100,7 +100,7 @@ bridge/
 │   ├── dist/*.js
 │   ├── node_modules/         # production dependencies only (ws, the pinned harness)
 │   └── package.json
-└── manifest.json             # { nodeVersion, platform, arch, bridgeVersion }
+└── manifest.json             # { nodeVersion, platform, arch, bridgeVersion, linkFree, files }
 ```
 
 El directorio está trackeado por un único marcador `.gitkeep` y por lo demás gitignored. El marcador no es
@@ -150,12 +150,18 @@ por bueno. Pasos:
    checksum: fallo ruidoso, nada se escribe en `src-tauri/`.
 3. Compilar el bridge: `pnpm --filter @gentle-shell/bridge build`.
 4. Armar el payload de producción en `bridge/app/`: `pnpm --filter @gentle-shell/bridge deploy --prod`
-   (que materializa el paquete del workspace con sus dependencias de producción), reintentado sin
-   `--legacy`, o — cuando ninguna de las dos formas de `deploy` funciona en el pnpm instalado — una copia
-   de `dist/` más un `package.json` con las dependencias `workspace:` eliminadas (el bridge importa
-   `@gentle-shell/protocol` solo como tipos) y un `pnpm install --prod` dentro del directorio staged. En
-   cualquier caso el resultado tiene que contener `app/dist/main.js` y `ws` y
-   `@earendil-works/pi-coding-agent` resolubles; el script verifica los tres y falla si no.
+   materializa el paquete del workspace con sus dependencias de producción, y después el destino
+   deployado se reinstala en su lugar con `--node-linker=hoisted`. La segunda instalación no es cosmética:
+   el layout aislado que pnpm usa por defecto es un bosque de symlinks, y Tauri copia `bridge/` como árbol
+   de recursos sin seguirlos — un build de release falló con
+   `resource path '.../node_modules/.pnpm/.../json-schema-to-ts' doesn't exist` antes de esto. Por eso el
+   bundle queda hoisteado, y el script recorre tanto el payload como el bundle staged y falla nombrando el
+   primer symlink que sobreviva. Cuando `deploy` no funciona en el pnpm instalado, una copia de `dist/`
+   más un `package.json` con las dependencias `workspace:` eliminadas (el bridge importa
+   `@gentle-shell/protocol` solo como tipos) y un `pnpm install --prod` hoisteado en el directorio staged
+   hacen lo mismo.
+   En cualquier caso el resultado tiene que contener `app/dist/main.js`, `ws` y
+   `@earendil-works/pi-coding-agent` resolubles, y ningún symlink; el script verifica eso y falla si no.
 5. Copiar el binario de Node a `bridge/node(.exe)`, poner el bit de ejecución en POSIX, escribir
    `manifest.json`, imprimir las rutas y tamaños producidos, y borrar el directorio scratch.
 
