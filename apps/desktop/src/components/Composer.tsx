@@ -4,9 +4,9 @@ import { describeCommand } from "../lib/commands";
 import { cycle } from "../lib/menu";
 import { SkeletonLines } from "./Skeleton";
 import { Icon } from "./Icon";
-import type { ProfilesView } from "@gentle-shell/protocol";
+import type { PermissionMode, ProfilesView } from "@gentle-shell/protocol";
 import type { Attachment } from "../lib/attachments";
-import { permissionRows } from "../lib/permissions";
+import { permissionRows, type PermissionRow } from "../lib/permissions";
 import type { PermissionsPanelView } from "../state/permissions";
 import { liveChat } from "../state/chat";
 
@@ -15,6 +15,7 @@ type Menu = "model" | "profile" | "permissions" | null;
 /** What the chip says: the default new threads start in, never a mode the open thread may not have. */
 function permissionDefault(view: PermissionsPanelView): string {
 	if (view.data === null) return "…";
+	if (view.data.state !== "ok") return "unavailable";
 	return view.data.default ?? "unknown";
 }
 
@@ -32,8 +33,15 @@ export function Composer(props: {
 	profile: () => string;
 	/** The permission default new threads start in, as the bridge reports it. */
 	permissions: () => PermissionsPanelView;
-	/** Write a mode as the default for new threads; the panel refuses an elevated one. */
-	onSetPermissionDefault: (mode: string) => void;
+	/**
+	 * Write a mode as the default for new threads. Resolves once the attempt settled, so the menu can stay
+	 * open over a refusal; the panel refuses an elevated mode before the request exists.
+	 */
+	onSetPermissionDefault: (mode: string) => Promise<void>;
+	/** The mode the open thread reports over `gentle:mode`, when the agent has published one. */
+	threadMode: () => PermissionMode | null;
+	/** Ask the bridge again before the menu shows: the default is a file a terminal session may have changed. */
+	onRefreshPermissions: () => void;
 	commands: () => ReadonlyArray<{ name: string; description: string }>;
 	models: () => ReadonlyArray<{ provider: string; id: string }>;
 	onLoadModels: () => void;
@@ -212,6 +220,22 @@ export function Composer(props: {
 		setMenu((current) => (current === next ? null : next));
 		setQuery("");
 		if (next === "model" && props.models().length === 0) props.onLoadModels();
+		if (next === "permissions") props.onRefreshPermissions();
+	}
+
+	/**
+	 * Apply a lower default from the menu.
+	 *
+	 * The menu stays open when the bridge refused it or there was no bridge to ask: the refusal is the
+	 * only thing the person needs to read, and closing would hide it behind a chip that did not move.
+	 */
+	async function chooseMode(row: PermissionRow): Promise<void> {
+		if (!row.settable) return;
+		await props.onSetPermissionDefault(row.mode);
+		if (props.permissions().error !== null) return;
+		// A new thread was opened for it, so the keyboard belongs back in the composer.
+		setMenu(null);
+		area?.focus();
 	}
 
 	return (
@@ -406,20 +430,26 @@ export function Composer(props: {
 										<button
 											class="popover-row"
 											classList={{ current: row.current }}
-											disabled={props.permissions().busy}
+											// An elevated mode is not a choice this menu offers: it is set in a terminal, and the
+											// bridge would refuse it anyway, so the row is not clickable at all.
+											disabled={!row.settable || props.permissions().busy}
 											title={row.terminal === null ? `New threads start in ${row.mode}` : `Set in a terminal: ${row.terminal}`}
-											onClick={() => {
-												props.onSetPermissionDefault(row.mode);
-												if (row.settable) setMenu(null);
-											}}
+											onClick={() => void chooseMode(row)}
 										>
 											<span class="mono">{row.mode}</span>
+											<Show when={row.current}>
+												<span class="muted">default</span>
+											</Show>
+											<Show when={row.terminal}>
+												<span class="muted">set in a terminal</span>
+											</Show>
 										</button>
 									)}
 								</For>
 								<p class="popover-note">
-									New threads start in the mode marked current; the open thread keeps the one it started with.
+									New threads start in the mode marked default; the open thread keeps the one it started with.
 								</p>
+								<Show when={props.threadMode()}>{(mode) => <p class="popover-note">This thread reports {mode()}.</p>}</Show>
 								<Show when={permissionRows(props.permissions().data).some((row) => !row.settable)}>
 									<p class="popover-note">
 										Raising it is a terminal job:{" "}

@@ -13,6 +13,7 @@ import { BINDINGS, createKeymap, isMac, type KeyEventLike } from "./lib/keybindi
 import { describeCommand, shellAction } from "./lib/commands";
 import { gridTemplate } from "./lib/layout";
 import { folderLabel, relativeTime } from "./lib/threads";
+import { parsePermissionStatus } from "./lib/permissions";
 import { createChatController } from "./state/chat";
 import { createLayout } from "./state/layout";
 import { createPermissionsPanel } from "./state/permissions";
@@ -61,6 +62,8 @@ export default function App() {
 	createEffect(() => {
 		if (chat.connection() === "connected") void permissions.refresh();
 	});
+	// The chip writes the default, but the open thread's real mode comes from the status the agent publishes.
+	const threadMode = () => parsePermissionStatus(chat.statuses()["gentle:mode"]);
 	const openProfiles = (): void => {
 		setPalette(null);
 		setSheet("profiles");
@@ -277,12 +280,14 @@ export default function App() {
 					onUseProfile={(name) => void profiles.use(name)}
 					onManageProfiles={openProfiles}
 					permissions={permissions.view}
+					onSetPermissionDefault={permissions.setDefault}
+					threadMode={threadMode}
+					onRefreshPermissions={() => void permissions.refresh()}
 					commands={chat.commands}
 					models={chat.models}
 					onLoadModels={() => void chat.loadModels()}
 					onSwitchModel={(provider, id) => void chat.switchModel(provider, id)}
 					onRunCommand={(name) => void chat.runCommand(name)}
-					onSetPermissionDefault={(mode) => void permissions.setDefault(mode)}
 				/>
 				<StatusBar
 					connection={chat.connection}

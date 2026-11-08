@@ -61,9 +61,19 @@ export function createPermissionsPanel(options: PermissionsPanelOptions): Permis
 		setView((value) => ({ ...value, busy: true, error: null, notice: null }));
 		try {
 			const data = await client.permissions({ action: "default", mode });
+			// The chip shows the default the bridge reports, never the one that was asked for. An answer that
+			// carries no default means nothing was applied, so the previous value stays and no thread opens.
+			if (data.state !== "ok" || data.default === null) {
+				setView((value) => ({
+					...value,
+					error: data.message.length > 0 ? data.message : "the bridge did not save the new default",
+				}));
+				return;
+			}
+			const applied = data.default;
 			setView((value) => ({ ...value, data }));
 			await options.newThread();
-			setView((value) => ({ ...value, notice: `New threads now start in ${mode}, and a new thread was opened.` }));
+			setView((value) => ({ ...value, notice: `New threads now start in ${applied}, and a new thread was opened.` }));
 		} catch (error) {
 			setView((value) => ({ ...value, error: messageOf(error) }));
 		} finally {
