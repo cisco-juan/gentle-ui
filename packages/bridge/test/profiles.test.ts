@@ -83,8 +83,11 @@ function names(view: ProfilesView): string[] {
 	return view.profiles.map((profile) => profile.name);
 }
 
+/** gentle-ai keeps its own snapshots in `backups/`, so the profiles file is kept apart from them. */
+const BACKUPS = "profiles-backups";
+
 function backups(configHome: string): string[] {
-	const dir = join(configHome, "backups");
+	const dir = join(configHome, BACKUPS);
 	return existsSync(dir) ? readdirSync(dir).filter((entry) => entry.startsWith("profiles.")) : [];
 }
 
@@ -215,7 +218,8 @@ test("the file is backed up once, before the first write, with the bytes it had"
 	await profilesCreate(s.workspace, "gamma", undefined, s.options);
 	const first = backups(s.configHome);
 	assert.equal(first.length, 1);
-	assert.equal(readFileSync(join(s.configHome, "backups", first[0] as string), "utf8"), original);
+	assert.equal(readFileSync(join(s.configHome, BACKUPS, first[0] as string), "utf8"), original);
+	assert.equal(existsSync(join(s.configHome, "backups")), false, "gentle-ai's own backups folder must not be touched");
 
 	await profilesCreate(s.workspace, "delta", undefined, s.options);
 	assert.equal(backups(s.configHome).length, 1, "a second write in the same run must not pile up backups");
@@ -276,6 +280,53 @@ test("a repository pin that wins over the default is reported, for the view and 
 	assert.equal(answer.view.active, "beta");
 });
 
+test("a change made outside the bridge between two writes is backed up too", integration, async () => {
+	const s = scratch();
+	await profilesCreate(s.workspace, "gamma", undefined, s.options);
+	assert.equal(backups(s.configHome).length, 1);
+
+	// The terminal edits the file while the bridge is running.
+	const outside = `${JSON.stringify({ ...SEED, active: "beta" }, null, 2)}\n`;
+	writeFileSync(s.file, outside);
+	await profilesCreate(s.workspace, "delta", undefined, s.options);
+
+	const kept = backups(s.configHome).map((name) => readFileSync(join(s.configHome, BACKUPS, name), "utf8"));
+	assert.equal(kept.length, 2);
+	assert.ok(kept.includes(outside), "the bytes the terminal wrote were not kept");
+});
+
+test("an agent name that would reach the prototype is refused, not accepted and dropped", integration, async () => {
+	const s = scratch();
+	const before = readFileSync(s.file, "utf8");
+	for (const agent of ["__proto__", "constructor", "prototype"]) {
+		await assert.rejects(() => profilesSave(s.workspace, "beta", [route(agent, "openai/gpt-5")], "organic", s.options), /agent/);
+	}
+	assert.equal(readFileSync(s.file, "utf8"), before);
+});
+
+test("what gentle-pi's reader drops without a word is named in the notes, and kept in the backup", integration, async () => {
+	const seed = {
+		...SEED,
+		futureKey: { kept: "by someone else" },
+		profiles: { ...SEED.profiles, alpha: { orchestrator: { model: "openai/gpt-5", extra: "unknown" } } },
+	};
+	const s = scratch(seed);
+	const view = await profilesList(s.workspace, s.options);
+	assert.ok(view.notes.some((note) => note.includes("futureKey")), `no note for the unknown top-level key: ${JSON.stringify(view.notes)}`);
+	assert.ok(view.notes.some((note) => note.includes("extra") && note.includes("alpha")), `no note for the unknown field: ${JSON.stringify(view.notes)}`);
+
+	const original = readFileSync(s.file, "utf8");
+	const after = await profilesCreate(s.workspace, "gamma", undefined, s.options);
+	assert.deepEqual(after.notes, [], "after a save the file is the normalized one, so there is nothing left to warn about");
+	assert.equal(readFileSync(join(s.configHome, BACKUPS, backups(s.configHome)[0] as string), "utf8"), original);
+});
+
+test("a legacy effort field is a conversion, not a loss, and is not warned about", integration, async () => {
+	const s = scratch({ ...SEED, profiles: { alpha: { orchestrator: { model: "openai/gpt-5", effort: "high" } } } });
+	const view = await profilesList(s.workspace, s.options);
+	assert.deepEqual(view.notes, []);
+});
+
 test("the websocket answers a profiles request, and a refused change comes back as an error", integration, async () => {
 	const s = scratch();
 	const server = await startBridgeServer({ workspace: s.workspace, profiles: s.options });
@@ -296,6 +347,9 @@ test("the websocket answers a profiles request, and a refused change comes back 
 		const listed = await answer("p1", { kind: "profiles", action: "list" });
 		assert.equal(listed.kind, "profiles");
 		if (listed.kind === "profiles" && listed.action === "list") assert.deepEqual(names(listed.data).sort(), ["alpha", "beta", "quiet"]);
+
+		const unknown = await answer("p3", { kind: "profiles", action: "bogus" });
+		assert.equal(unknown.kind, "error", "a request the bridge does not understand must be answered, not left waiting");
 
 		const refused = await answer("p2", { kind: "profiles", action: "create", name: "alpha" });
 		assert.equal(refused.kind, "error");

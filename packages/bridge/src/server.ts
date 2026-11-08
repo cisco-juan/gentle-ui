@@ -378,6 +378,9 @@ export async function startBridgeServer(options: BridgeServerOptions = {}): Prom
 				return reply({ action: "delete", data: await profilesDelete(workspace, message.name, profileOptions) });
 			case "activate":
 				return reply({ action: "activate", data: await profilesActivate(workspace, message.name, profileOptions) });
+			default:
+				// A client that sends an action this bridge does not know must hear so, not wait forever.
+				throw new Error(`unsupported profiles action: ${String((message as { action?: unknown }).action)}`);
 		}
 	}
 

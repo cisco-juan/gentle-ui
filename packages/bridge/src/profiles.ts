@@ -1,4 +1,4 @@
-import { constants, copyFileSync, existsSync, mkdirSync, realpathSync } from "node:fs";
+import { constants, copyFileSync, existsSync, mkdirSync, readFileSync, realpathSync } from "node:fs";
 import { createRequire } from "node:module";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
@@ -31,9 +31,12 @@ import { resolvePiEnvironment } from "./pi-environment.ts";
  * - a file it does not accept is never overwritten. Reading it is reported as `unavailable`, and a
  *   change is refused, so a half-edited file is left for its owner to fix.
  *
- * The file is backed up once per bridge run, before the first write, and every write goes through
- * gentle-pi's atomic temp-file-and-rename. There is no lock: the terminal and this bridge can both edit
- * the file, and the last writer wins, exactly as it does between two terminals.
+ * Before a write the file is backed up whenever it is not exactly what this run last wrote, so the first
+ * write keeps the original and a change made by the terminal in between is kept too, while consecutive
+ * writes of its own pile up nothing. Backups sit in their own folder, apart from the snapshots gentle-ai
+ * keeps in `backups/`. Every write goes through gentle-pi's atomic temp-file-and-rename. There is no lock:
+ * the terminal and this bridge can both edit the file, and the last writer wins, exactly as it does
+ * between two terminals.
  */
 
 /** The names this module calls. A library that lacks one is reported by name, not guessed around. */
@@ -64,6 +67,9 @@ const REQUIRED = [
 ] as const;
 
 const ORCHESTRATOR = "orchestrator";
+
+/** gentle-pi's agent-name rule lets these through, and as object keys they never become a route. */
+const FORBIDDEN_AGENTS = new Set(["__proto__", "constructor", "prototype"]);
 
 interface RoutingEntry {
 	model?: string;
@@ -258,8 +264,48 @@ export async function profilesList(workspace: string, options: ProfilesOptions =
 	if (read.status === "invalid") {
 		return unavailable(configHome, "file-invalid", invalidMessage(path));
 	}
-	if (read.status === "missing") return viewOf(lib, workspace, configHome, lib.emptyProfilesFile(), null, false);
-	return viewOf(lib, workspace, configHome, read.file, read.drops, true);
+	if (read.status === "missing") return viewOf(lib, workspace, configHome, lib.emptyProfilesFile(), null, false, []);
+	return viewOf(lib, workspace, configHome, read.file, read.drops, true, silentDrops(path));
+}
+
+const KNOWN_TOP_LEVEL = new Set(["kind", "version", "active", "profiles", "workflow"]);
+/** `effort` is the old name of `thinking`: gentle-pi converts it, so it is not a loss. */
+const KNOWN_ENTRY_FIELDS = new Set(["model", "thinking", "tier", "effort"]);
+
+/**
+ * What gentle-pi's reader discards without reporting it: top-level keys it does not know and fields
+ * inside a route it does not know. Saving writes the file back without them, so they are named here
+ * while there is still time to look at the backup.
+ */
+function silentDrops(path: string): string[] {
+	let value: unknown;
+	try {
+		value = JSON.parse(readFileSync(path, "utf8"));
+	} catch {
+		return [];
+	}
+	if (typeof value !== "object" || value === null || Array.isArray(value)) return [];
+	const record = value as Record<string, unknown>;
+
+	const notes: string[] = [];
+	for (const key of Object.keys(record)) {
+		if (!KNOWN_TOP_LEVEL.has(key)) notes.push(`"${key}" in profiles.json is not known to gentle-pi and is not kept when profiles are saved.`);
+	}
+	const profiles = record["profiles"];
+	if (typeof profiles === "object" && profiles !== null && !Array.isArray(profiles)) {
+		for (const [name, config] of Object.entries(profiles as Record<string, unknown>)) {
+			if (typeof config !== "object" || config === null || Array.isArray(config)) continue;
+			for (const [agent, entry] of Object.entries(config as Record<string, unknown>)) {
+				if (typeof entry !== "object" || entry === null || Array.isArray(entry)) continue;
+				for (const field of Object.keys(entry as Record<string, unknown>)) {
+					if (!KNOWN_ENTRY_FIELDS.has(field)) {
+						notes.push(`"${field}" in "${agent}" of "${name}" is not known to gentle-pi and is not kept when profiles are saved.`);
+					}
+				}
+			}
+		}
+	}
+	return notes;
 }
 
 function unavailable(configHome: string, reason: ProfilesFailureReason, message: string): ProfilesView {
@@ -288,6 +334,7 @@ function viewOf(
 	file: ProfilesFile,
 	drops: Drops | null,
 	stored: boolean,
+	extraNotes: readonly string[],
 ): ProfilesView {
 	const profiles: ProfileView[] = Object.entries(file.profiles).map(([name, config]) => ({
 		name,
@@ -299,7 +346,7 @@ function viewOf(
 	const agents = new Set<string>();
 	for (const profile of profiles) for (const entry of profile.routes) agents.add(entry.agent);
 
-	const notes: string[] = [];
+	const notes: string[] = [...extraNotes];
 	if (drops !== null) {
 		for (const name of drops.droppedProfiles) notes.push(`profile "${name}" is not valid and is skipped; the next save removes it.`);
 		for (const entry of drops.droppedAgents) notes.push(`"${entry.agent}" in "${entry.profile}" is not valid and is skipped; the next save removes it.`);
@@ -426,14 +473,13 @@ export async function profilesActivate(
 	}
 
 	try {
-		backupOnce(path, configHome, options);
-		lib.writeProfilesFileSync(path, next);
+		commit(lib, path, configHome, options, next);
 	} catch (error) {
 		if (previous !== null) lib.restoreOrchestratorSettings(settingsPath, previous.value);
 		throw error;
 	}
 
-	const view = viewOf(lib, workspace, configHome, next, null, true);
+	const view = viewOf(lib, workspace, configHome, next, null, true, []);
 	const reference = entry?.model === undefined ? undefined : lib.parseOrchestratorModelRef(entry.model);
 	const orchestrator: ProfileOrchestrator | null =
 		reference === undefined ? null : { provider: reference.provider, model: reference.model, thinking: entry?.thinking ?? null };
@@ -450,9 +496,8 @@ async function mutate(
 	const { configHome } = homes(options);
 	const path = lib.profilesFilePath(configHome);
 	const next = change(lib, readForWrite(lib, path));
-	backupOnce(path, configHome, options);
-	lib.writeProfilesFileSync(path, next);
-	return viewOf(lib, workspace, configHome, next, null, true);
+	commit(lib, path, configHome, options, next);
+	return viewOf(lib, workspace, configHome, next, null, true, []);
 }
 
 /** The file to change: the stored one, an empty one when there is none yet, never a broken one. */
@@ -466,7 +511,9 @@ function readForWrite(lib: ProfilesLibrary, path: string): ProfilesFile {
 function configOf(lib: ProfilesLibrary, routes: readonly ProfileRoute[]): ModelConfig {
 	const config: ModelConfig = {};
 	for (const route of routes) {
-		if (!lib.isSafeAgentName(route.agent)) throw new Error(`the agent name "${route.agent}" is not valid`);
+		if (!lib.isSafeAgentName(route.agent) || FORBIDDEN_AGENTS.has(route.agent)) {
+			throw new Error(`the agent name "${route.agent}" is not valid`);
+		}
 		if (route.model === null && route.thinking === null && route.tier === null) continue;
 		if (Object.prototype.hasOwnProperty.call(config, route.agent)) throw new Error(`the agent "${route.agent}" is listed twice`);
 
@@ -492,16 +539,40 @@ function configOf(lib: ProfilesLibrary, routes: readonly ProfileRoute[]): ModelC
 	return config;
 }
 
-const backedUp = new Set<string>();
+/** The text this run last wrote to each file; what is on disk and equal to it needs no backup. */
+const lastWritten = new Map<string, string>();
 
-/** Keep what was there before the first write of this run; later writes in the same run add nothing. */
-function backupOnce(path: string, configHome: string, options: ProfilesOptions): void {
-	if (backedUp.has(path) || !existsSync(path)) return;
-	const directory = join(configHome, "backups");
+const BACKUP_DIRECTORY = "profiles-backups";
+
+/** Back the file up if needed, write it atomically, and remember what is now on disk. */
+function commit(lib: ProfilesLibrary, path: string, configHome: string, options: ProfilesOptions, next: ProfilesFile): void {
+	keepBackup(path, configHome, options);
+	lib.writeProfilesFileSync(path, next);
+	try {
+		lastWritten.set(path, readFileSync(path, "utf8"));
+	} catch {
+		lastWritten.delete(path);
+	}
+}
+
+/** Keep the bytes about to be replaced, unless they are exactly what this run wrote itself. */
+function keepBackup(path: string, configHome: string, options: ProfilesOptions): void {
+	if (!existsSync(path)) return;
+	if (lastWritten.get(path) === readFileSync(path, "utf8")) return;
+
+	const directory = join(configHome, BACKUP_DIRECTORY);
 	mkdirSync(directory, { recursive: true });
 	const stamp = (options.now?.() ?? new Date()).toISOString().replace(/[:.]/g, "-");
-	copyFileSync(path, join(directory, `profiles.${stamp}.json`), constants.COPYFILE_EXCL);
-	backedUp.add(path);
+	// Two backups in the same millisecond must not overwrite each other, or fail.
+	for (let attempt = 0; ; attempt++) {
+		const target = join(directory, `profiles.${stamp}${attempt === 0 ? "" : `-${attempt}`}.json`);
+		try {
+			copyFileSync(path, target, constants.COPYFILE_EXCL);
+			return;
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code !== "EEXIST" || attempt >= 50) throw error;
+		}
+	}
 }
 
 function messageOf(error: unknown): string {

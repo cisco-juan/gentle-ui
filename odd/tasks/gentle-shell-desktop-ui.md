@@ -100,7 +100,8 @@ T17 [x] Housekeeping: T6 checked, Settings copy no longer promises a palette tha
 T18 [x] A model switch from the chip names the model with the key Pi reads (`modelId`, not `model`); every switch failed
     with "Model not found". S11 — adbcc5f. Route: inline. Risk none.
 T19 [ ] Bridge: profiles module over gentle-pi's own library (loaded with jiti), `profiles` protocol messages, backup
-    before the first write, atomic writes, refusal of values its reader would drop. S11 — this commit.
+    whenever the file is not what the bridge last wrote (in `profiles-backups/`), atomic writes, refusal of values its
+    reader would drop, notes for what it drops silently. S11 — 2b5454b and the fix that follows it.
     Route: inline. Risk items 1 and 3 (writes a file another program owns). Gate pending: independent verifier, then
     native review. Checked off when both are done.
 T20 [ ] UI: Profiles sheet, composer chip, bare `/gentle:profiles` opens the sheet, "use for new threads". S11
@@ -235,8 +236,17 @@ What was found (read from the installed gentle-pi 4.7.0 and Pi 1.5.0, not assume
 - Pi has no RPC to reload settings or extensions; a file edit reaches a thread only through a new one.
 - The bridge module refuses values gentle-pi's reader would silently drop (a model id with a space, an unknown thinking
   level or tier, an orchestrator model that is not provider/model) and refuses to write over a file it does not accept.
-  The reader's own drops are reported as notes, because the next save removes them. Verified read-only against the real
-  file: 5 profiles of 13 routes each, active `grok-opencode`, 40 ms, file untouched.
+  What the reader drops is reported as notes, because the next save removes it: invalid profile and agent names, a stale
+  default, a bad mode, and (found by the independent verifier) unknown top-level keys and unknown fields inside a route,
+  which gentle-pi's own reader discards without a word. Verified read-only against the real file: 5 profiles of 13
+  routes each, active `grok-opencode`, 40 ms, file untouched.
+- Backups go to `<config home>/profiles-backups/`, not `backups/`: gentle-ai keeps timestamped snapshot directories
+  (manifest.json + snapshot.tar.gz) there and a loose file could confuse it. A backup is made whenever the file is not
+  exactly what the bridge last wrote, so an edit by the terminal in between is kept too.
+- Independent verifier (T19): 10 probes against a copy of the real file, no blockers, real files untouched. Advisories
+  fixed: backup folder, backups of outside edits, `__proto__`/`constructor`/`prototype` agent names refused, unknown
+  `action` answered with an error, silent drops named. Left as is: a save of an unchanged profile reorders its agent
+  keys (orchestrator first, then alphabetical); the data is equal.
 
 Open: per-thread binding needs a gentle-pi verb (for example `/gentle:profiles use <name>`); fallbacks and pin editing are
 not part of this pass; the terminal and the bridge can both write the file and the last writer wins.
