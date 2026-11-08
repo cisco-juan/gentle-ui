@@ -1,0 +1,25 @@
+{
+  "name": "@gentle-shell/bridge",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "gentle-bridge": "dist/main.js"
+  },
+  "scripts": {
+    "dev": "node --experimental-strip-types src/main.ts",
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node --experimental-strip-types --test test/*.test.ts"
+  },
+  "dependencies": {
+    "@earendil-works/pi-coding-agent": "1.5.0",
+    "@gentle-shell/protocol": "workspace:*",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/ws": "^8.5.13",
+    "typescript": "~5.9.3"
+  }
+}
