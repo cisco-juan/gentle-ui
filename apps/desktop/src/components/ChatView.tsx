@@ -57,6 +57,14 @@ export function ChatView(props: {
 	let scroller: HTMLDivElement | undefined;
 	// Follow the stream only while the reader is at its end; scrolling up to read must stick.
 	let following = true;
+	// The same fact as `following`, but reactive: the jump-to-end control has to appear on screen.
+	const [away, setAway] = createSignal(false);
+
+	function jumpToEnd(): void {
+		following = true;
+		setAway(false);
+		if (scroller) scroller.scrollTop = scroller.scrollHeight;
+	}
 	/** Scroll height measured before an older page was asked for; null when none is on its way. */
 	let anchor: number | null = null;
 	/** The rows that were on screen at the last commit, so a prepend can be told from an append. */
@@ -86,7 +94,10 @@ export function ChatView(props: {
 		}
 
 		// Sending a message is a request to see the answer, wherever the reader had scrolled to.
-		if (items[items.length - 1]?.kind === "user") following = true;
+		if (items[items.length - 1]?.kind === "user") {
+			following = true;
+			setAway(false);
+		}
 		if (following && scroller) scroller.scrollTop = scroller.scrollHeight;
 	});
 
@@ -114,6 +125,7 @@ export function ChatView(props: {
 			onScroll={() => {
 				if (!scroller) return;
 				following = isNearBottom(scroller);
+				setAway(!following);
 				if (shouldLoadOlder({ scrollTop: scroller.scrollTop, loading: props.older(), hasOlder: props.hasOlder() })) {
 					// Measured before the page arrives, so the prepend can put the reader back where they were.
 					anchor = scroller.scrollHeight;
@@ -124,6 +136,7 @@ export function ChatView(props: {
 				// Settled by the gesture itself: a stream that lands between the wheel and the scroll event
 				// would otherwise pin the reader back to the end and make scrolling feel blocked.
 				if (scroller) following = followAfterWheel(scroller, event.deltaY);
+				setAway(!following);
 			}}
 		>
 			<Show when={props.older()}>
@@ -166,6 +179,12 @@ export function ChatView(props: {
 					</header>
 					<RichText text={props.draft()} />
 				</article>
+			</Show>
+
+			<Show when={away()}>
+				<button class="jump-end" onClick={jumpToEnd} title="Scroll to the newest message">
+					<span aria-hidden="true">↓</span> jump to end
+				</button>
 			</Show>
 
 			<Show when={activity()}>{(line) => (

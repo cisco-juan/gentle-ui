@@ -70,6 +70,18 @@ Quote: "cuando esta working el chat esta bloqueado, no puedo hacer scroll por ej
 S16. Chat history must load lazily as the transcript is scrolled.
 Quote: "El chat solo muestra la ultima iteracion, deberia ir haciendo lazyloading del historial del chat con el scroll"
 
+S17. Subagents are listed newest first, and a subagent opens a view of its own run.
+Quote: "Ordenar los agentes para que los mas reciente arriba y al darle click a un subagente este abra un modal con la iteracion para ver como se ejecuta"
+
+S18. The right inspector belongs to the open thread; it must not keep showing the previous chat's data.
+Quote: "Los datos del sidbar de la derecha deben pertenecer al proyecto que esta seleccionado (es decir al chat) cuando cambio entre chats se mantiene el mismo contenido"
+
+S19. Every option of the permission menu must be readable, including the selected one.
+Quote: "El componente de seleccion de permisos debe ser mas ancho, no se la opcion seleccionada"
+
+S20. A jump-to-end control appears while the reader has scrolled away from the end of the chat.
+Quote: "Debemos tener un boton que aparezca solo cuando estemos haciendo scroll en el chat para ir al final"
+
 ## Tasks
 
 T1  [x] Workspace scaffold: git init, pnpm workspace, `apps/desktop` (Tauri v2 + Solid + Vite), `packages/bridge`. S6 — 64eb88d
@@ -326,10 +338,26 @@ What was built and why:
   before, so behaviour is unchanged. `VITE_BRIDGE_URL` did not override the endpoint in a plain browser run — that
   needs its own look before the next verification relies on it.
 
+T29 [ ] Agents tab: newest first, and a click on a subagent opens a modal showing that run's iteration. S17
+T30 [ ] Inspector data is scoped to the open thread: switching chats must not leave the previous thread's
+    changes, files, tasks, memory or agents on screen. S18
+T31 [ ] The permission menu is wide enough for the selected mode to be readable. S19
+T32 [ ] A jump-to-end button appears in the chat only while the reader is away from the end. S20
+
 T28 [ ] A thread opens showing the oldest row of its first page for a moment before it lands on the newest one:
     the follow effect runs before the skeleton leaves and the height settles. Visible in the app (empty → top →
     bottom within a few seconds); must not be a jump the reader can catch. S16
     Found while verifying T27; measured, not guessed.
+
+L13. 2026-11-08. Four UI adjustments after using the app, verbatim:
+"Ordenar los agentes para que los mas reciente arriba y al darle click a un subagente este abra un modal con la
+iteracion para ver como se ejecuta" / "Los datos del sidbar de la derecha deben pertenecer al proyecto que esta
+seleccionado (es decir al chat) cuando cambio entre chats se mantiene el mismo contenido" / "El componente de
+seleccion de permisos debe ser mas ancho, no se la opcion seleccionada" / "Debemos tener un boton que aparezca solo
+cuando estemos haciendo scroll en el chat para ir al final".
+Order chosen: T31 and T32 are small and land with the transcript work; T29 and T30 touch the inspector together, so
+they are one unit with one writer, and they wait for the worker holding `styles.css` to finish rather than editing
+the same file from two places.
 
 L12. 2026-11-08. While verifying T26, opening the user's long thread ("Estmos buscando crear un UI para gen",
 hundreds of turns on disk) rendered three rows and no scroll: `loadHistory` asks Pi for `get_messages` and shows

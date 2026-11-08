@@ -423,7 +423,12 @@ export function Composer(props: {
 												if (row.settable) setMenu(null);
 											}}
 										>
+											{/* The current mode is marked, not just tinted: a colour alone is not a label. */}
+											<span class="popover-check">{row.current ? "\u2713" : ""}</span>
 											<span class="mono">{row.mode}</span>
+											<Show when={row.current}>
+												<span class="popover-current">current</span>
+											</Show>
 										</button>
 									)}
 								</For>
