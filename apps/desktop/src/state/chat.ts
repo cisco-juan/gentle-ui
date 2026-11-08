@@ -2,6 +2,7 @@ import { batch, createSignal, type Accessor } from "solid-js";
 import type { ExtensionUiRequest, ExtensionUiResponse, ServerMessage, SessionSummary, UploadedFile } from "@gentle-shell/protocol";
 import { BridgeClient } from "../lib/bridge";
 import { checkCommand, unknownCommandNotice } from "../lib/commands";
+import { setModelParams } from "../lib/models";
 import { answerLabel } from "../lib/permission";
 import { extensionErrorText, promptParams, startsRun, wasCancelled } from "../lib/prompt-outcome";
 import {
@@ -741,7 +742,7 @@ function errorText(error: unknown): string {
 	async function switchModel(provider: string, modelId: string): Promise<void> {
 		if (!client || !threadId) return;
 		try {
-			await client.command(threadId, "set_model", { provider, model: modelId });
+			await client.command(threadId, "set_model", setModelParams(provider, modelId));
 			setModel(modelId);
 		} catch (error) {
 			append({ kind: "notice", id: nextId(), text: errorText(error), tone: "error" });
