@@ -9,6 +9,7 @@ import { Splitter } from "./components/Splitter";
 import { StatusBar } from "./components/StatusBar";
 import { DEV_BRIDGE_URL, resolveBridgeUrl } from "./lib/bridge-endpoint";
 import { BINDINGS, createKeymap, isMac, type KeyEventLike } from "./lib/keybindings";
+import { describeCommand } from "./lib/commands";
 import { gridTemplate } from "./lib/layout";
 import { folderLabel, relativeTime } from "./lib/threads";
 import { createChatController } from "./state/chat";
@@ -86,7 +87,10 @@ export default function App() {
 			items: chat.commands().map((command) => ({
 				id: `command:${command.name}`,
 				label: `/${command.name}`,
-				hint: command.description,
+				hint:
+					describeCommand(command.name).kind === "terminal"
+						? `${command.description} · terminal only`
+						: command.description,
 				run: () => void chat.runCommand(command.name),
 			})),
 		};

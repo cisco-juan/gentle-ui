@@ -1191,3 +1191,13 @@ main {
 .tool-toggle:hover {
 	color: var(--accent);
 }
+
+/* A command the agent advertises but this host cannot run. */
+.cmd-tag {
+	font-family: var(--mono);
+	font-size: 9.5px;
+	letter-spacing: 0.5px;
+	text-transform: uppercase;
+	color: var(--warn);
+	opacity: 0.85;
+}

@@ -1,5 +1,6 @@
 import { For, Show, createMemo, createSignal, onCleanup, onMount } from "solid-js";
 import { AttachmentStrip } from "./AttachmentStrip";
+import { describeCommand } from "../lib/commands";
 import { Icon } from "./Icon";
 import type { Attachment } from "../lib/attachments";
 import { liveChat } from "../state/chat";
@@ -201,6 +202,9 @@ export function Composer(props: {
 								}}
 							>
 								<span class="command">/{command.name}</span>
+								<Show when={describeCommand(command.name).kind === "terminal"}>
+									<span class="cmd-tag">terminal</span>
+								</Show>
 								<span class="muted">{command.description}</span>
 							</li>
 						)}

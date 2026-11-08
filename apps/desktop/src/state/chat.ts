@@ -1,6 +1,7 @@
 import { batch, createSignal, type Accessor } from "solid-js";
 import type { ExtensionUiRequest, ExtensionUiResponse, ServerMessage, SessionSummary, UploadedFile } from "@gentle-shell/protocol";
 import { BridgeClient } from "../lib/bridge";
+import { describeCommand, isRunnableCommand } from "../lib/commands";
 import {
 	IMAGE_ONLY_PROMPT,
 	buildImages,
@@ -66,6 +67,8 @@ export interface ChatController {
 	switchThread(path: string): Promise<void>;
 	refreshThreads(): Promise<void>;
 	answerPermission(requestId: string, response: ExtensionUiResponse): void;
+	/** Surfaces a message in the transcript from outside the agent stream. */
+	notify(text: string, tone?: "info" | "warning" | "error"): void;
 	loadModels(): Promise<void>;
 	switchModel(provider: string, modelId: string): Promise<void>;
 	runCommand(name: string): Promise<void>;
@@ -390,6 +393,22 @@ export function createChatController(options: { url: string; cwd: string }): Cha
 	/** The one way a prompt reaches Pi, so a command and a typed message behave the same. */
 	async function prompt(message: string, images: readonly PromptImage[] = []): Promise<void> {
 		if (!client || !threadId || message.length === 0) return;
+
+		// Every path that can start a prompt ends here — composer, palette, chips — so this is the one
+		// place that keeps a terminal-only command from leaving and coming back as "requires TUI mode".
+		const slash = message.startsWith("/") ? (message.slice(1).split(/\s+/)[0] ?? "") : "";
+		if (slash.length > 0 && !isRunnableCommand(slash)) {
+			const described = describeCommand(slash);
+			append({
+				kind: "notice",
+				id: nextId(),
+				text: `/${slash} only works in a terminal: ${described.note ?? "it needs a terminal view"}.${
+					described.surface ? ` Use ${described.surface} here instead.` : ""
+				}`,
+				tone: "warning",
+			});
+			return;
+		}
 		append({ kind: "user", id: nextId(), text: message });
 		setRunning(true);
 		try {
@@ -587,6 +606,10 @@ function errorText(error: unknown): string {
 		return error instanceof Error ? error.message : String(error);
 	}
 
+	function notify(text: string, tone: "info" | "warning" | "error" = "info"): void {
+		append({ kind: "notice", id: nextId(), text, tone });
+	}
+
 	function applyCommands(list: Array<{ name: string; description: string }>): void {
 		setCommands(list);
 	}
@@ -658,6 +681,7 @@ function errorText(error: unknown): string {
 		switchThread,
 		refreshThreads,
 		answerPermission,
+		notify,
 		loadModels,
 		switchModel,
 		runCommand,
