@@ -1,10 +1,12 @@
-import { createSignal } from "solid-js";
+import { createSignal, onCleanup } from "solid-js";
 
 /**
  * Draggable divider between two panels.
  *
- * Uses pointer capture so a fast drag cannot slip out of the 6px target, reports the delta from the
- * width it started at (not from the previous move), and resets on double click.
+ * The drag listens on `window`, not on the divider: a six-pixel target is easy to slip off, and a
+ * listener bound to the element can be lost when Solid re-renders it, which leaves the shell resizing
+ * forever after one stray pointer. Releasing anywhere — including outside the window — ends the drag.
+ * Double click resets.
  */
 export function Splitter(props: {
 	/** Which panel this divider resizes. */
@@ -16,8 +18,42 @@ export function Splitter(props: {
 	const [dragging, setDragging] = createSignal(false);
 	let startX = 0;
 	let startWidth = 0;
+	let stop: (() => void) | null = null;
 
 	const sign = () => (props.edge === "rail" ? 1 : -1);
+
+	function begin(event: PointerEvent): void {
+		if (event.button !== 0) return;
+		event.preventDefault();
+		startX = event.clientX;
+		startWidth = props.width();
+		setDragging(true);
+		document.body.classList.add("resizing");
+
+		const move = (moveEvent: PointerEvent): void => {
+			props.onResize(startWidth + sign() * (moveEvent.clientX - startX));
+		};
+		const end = (): void => {
+			stop?.();
+		};
+
+		window.addEventListener("pointermove", move);
+		window.addEventListener("pointerup", end);
+		window.addEventListener("pointercancel", end);
+		window.addEventListener("blur", end);
+
+		stop = () => {
+			setDragging(false);
+			document.body.classList.remove("resizing");
+			window.removeEventListener("pointermove", move);
+			window.removeEventListener("pointerup", end);
+			window.removeEventListener("pointercancel", end);
+			window.removeEventListener("blur", end);
+			stop = null;
+		};
+	}
+
+	onCleanup(() => stop?.());
 
 	return (
 		<div
@@ -26,23 +62,7 @@ export function Splitter(props: {
 			role="separator"
 			aria-orientation="vertical"
 			title="Drag to resize, double click to reset"
-			onPointerDown={(event) => {
-				event.preventDefault();
-				startX = event.clientX;
-				startWidth = props.width();
-				setDragging(true);
-				event.currentTarget.setPointerCapture(event.pointerId);
-			}}
-			onPointerMove={(event) => {
-				if (!dragging()) return;
-				props.onResize(startWidth + sign() * (event.clientX - startX));
-			}}
-			onPointerUp={(event) => {
-				if (!dragging()) return;
-				setDragging(false);
-				event.currentTarget.releasePointerCapture(event.pointerId);
-			}}
-			onPointerCancel={() => setDragging(false)}
+			onPointerDown={begin}
 			onDblClick={() => props.onReset()}
 		/>
 	);

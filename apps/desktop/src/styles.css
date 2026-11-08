@@ -100,6 +100,17 @@ kbd {
 	cursor: col-resize;
 	background: transparent;
 	touch-action: none;
+	user-select: none;
+}
+
+/* While a panel is being dragged, the pointer belongs to the divider and nothing may be selected. */
+body.resizing {
+	cursor: col-resize;
+	user-select: none;
+}
+
+body.resizing * {
+	cursor: col-resize !important;
 }
 
 .splitter::after {
