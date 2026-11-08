@@ -1,6 +1,7 @@
 import { Show, createMemo, createSignal, onCleanup, onMount } from "solid-js";
 import { ChatView } from "./components/ChatView";
 import { Composer } from "./components/Composer";
+import { Inspector } from "./components/Inspector";
 import { Palette, type PaletteGroup } from "./components/Palette";
 import { SettingsSheet, ShortcutsSheet } from "./components/Sheets";
 import { Sidebar } from "./components/Sidebar";
@@ -21,6 +22,7 @@ export default function App() {
 	const [sheet, setSheet] = createSignal<Sheet>(null);
 	const [palette, setPalette] = createSignal<PaletteMode>(null);
 	const [railOpen, setRailOpen] = createSignal(true);
+	const [inspectorOpen, setInspectorOpen] = createSignal(true);
 
 	onMount(() => {
 		void chat.connect();
@@ -37,6 +39,7 @@ export default function App() {
 				{ id: "settings", label: "Settings", hint: format("Mod+,"), run: () => setSheet("settings") },
 				{ id: "shortcuts", label: "Keyboard shortcuts", hint: format("Mod+Shift+K"), run: () => setSheet("shortcuts") },
 				{ id: "rail", label: "Toggle the rail", hint: format("Mod+B"), run: () => setRailOpen((open) => !open) },
+				{ id: "inspector", label: "Toggle the inspector", hint: "changes, files, tasks", run: () => setInspectorOpen((open) => !open) },
 				{ id: "interrupt", label: "Interrupt the agent", hint: "Esc", run: () => void chat.interrupt() },
 			],
 		};
@@ -143,7 +146,7 @@ export default function App() {
 	];
 
 	return (
-		<div class="app" classList={{ "rail-closed": !railOpen() }}>
+		<div class="app" classList={{ "rail-closed": !railOpen(), "inspector-closed": !inspectorOpen() }}>
 			<Sidebar
 				project={PROJECT_LABEL || "current workspace"}
 				connection={chat.connection()}
@@ -179,6 +182,10 @@ export default function App() {
 				/>
 				<StatusBar model={chat.model} cost={chat.cost} running={chat.running} />
 			</main>
+
+			<Show when={inspectorOpen()}>
+				<Inspector chat={chat} onClose={() => setInspectorOpen(false)} />
+			</Show>
 
 			<Palette open={palette() !== null} onClose={() => setPalette(null)} groups={groups()} />
 

@@ -89,6 +89,39 @@ export interface SlashCommand {
 	readonly source?: string;
 }
 
+/** One entry of a workspace directory listing, paths relative to the workspace root. */
+export interface WorkspaceTreeEntry {
+	readonly name: string;
+	readonly path: string;
+	readonly kind: "file" | "dir";
+}
+
+/** A workspace file read by the inspector; `truncated` means the byte cap was hit. */
+export interface WorkspaceFileContent {
+	readonly content: string;
+	readonly truncated: boolean;
+}
+
+/** How the working tree changed one path, in the vocabulary the changes list renders. */
+export type GitFileStatus = "added" | "modified" | "deleted" | "renamed" | "untracked";
+
+export interface GitStatusFile {
+	readonly path: string;
+	readonly status: GitFileStatus;
+	/** True when the change is already in the index, false when it lives in the working tree. */
+	readonly staged: boolean;
+	/** Line counts from `git diff --numstat`; absent for untracked files and binaries. */
+	readonly additions?: number;
+	readonly deletions?: number;
+}
+
+export interface GitStatus {
+	readonly isRepo: boolean;
+	/** Current branch, empty when the repository has no commit yet or git could not say. */
+	readonly branch: string;
+	readonly files: readonly GitStatusFile[];
+}
+
 export type ClientMessage =
 	| ({ readonly kind: "open"; readonly id: string } & OpenThreadRequest)
 	| { readonly kind: "close"; readonly threadId: string }
@@ -105,7 +138,11 @@ export type ClientMessage =
 			readonly requestId: string;
 			readonly response: ExtensionUiResponse;
 	  }
-	| { readonly kind: "sessions"; readonly id: string };
+	| { readonly kind: "sessions"; readonly id: string }
+	| { readonly kind: "git"; readonly id: string; readonly action: "status" }
+	| { readonly kind: "git"; readonly id: string; readonly action: "diff"; readonly path: string }
+	| { readonly kind: "fs"; readonly id: string; readonly action: "tree"; readonly path?: string }
+	| { readonly kind: "fs"; readonly id: string; readonly action: "read"; readonly path: string };
 
 export type ServerMessage =
 	| {
@@ -128,4 +165,12 @@ export type ServerMessage =
 	| { readonly kind: "log"; readonly threadId: string; readonly line: string }
 	| { readonly kind: "exited"; readonly threadId: string; readonly code: number | null }
 	| { readonly kind: "sessions"; readonly id: string; readonly items: readonly SessionSummary[] }
+	/** Answer to `{kind:"git", action:"status"}`. */
+	| { readonly kind: "git"; readonly id: string; readonly action: "status"; readonly data: GitStatus }
+	/** Answer to `{kind:"git", action:"diff"}`: unified diff text, or a note for an untracked directory. */
+	| { readonly kind: "git"; readonly id: string; readonly action: "diff"; readonly data: string }
+	/** Answer to `{kind:"fs", action:"tree"}`. */
+	| { readonly kind: "fs"; readonly id: string; readonly action: "tree"; readonly data: readonly WorkspaceTreeEntry[] }
+	/** Answer to `{kind:"fs", action:"read"}`. */
+	| { readonly kind: "fs"; readonly id: string; readonly action: "read"; readonly data: WorkspaceFileContent }
 	| { readonly kind: "error"; readonly id?: string; readonly message: string };

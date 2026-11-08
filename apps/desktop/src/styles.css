@@ -78,14 +78,22 @@ kbd {
 
 .app {
 	display: grid;
-	grid-template-columns: 268px minmax(0, 1fr);
+	grid-template-columns: 268px minmax(0, 1fr) 360px;
 	height: 100%;
 	overflow: hidden;
 	transition: grid-template-columns 160ms ease;
 }
 
 .app.rail-closed {
-	grid-template-columns: 0 minmax(0, 1fr);
+	grid-template-columns: 0 minmax(0, 1fr) 360px;
+}
+
+.app.inspector-closed {
+	grid-template-columns: 268px minmax(0, 1fr) 0;
+}
+
+.app.rail-closed.inspector-closed {
+	grid-template-columns: 0 minmax(0, 1fr) 0;
 }
 
 .app.rail-closed .sidebar {

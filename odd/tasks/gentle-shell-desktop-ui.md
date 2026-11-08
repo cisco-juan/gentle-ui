@@ -50,12 +50,13 @@ T4  [x] Chat view: streaming messages, collapsible tool cards, inline permission
     Verified end to end: a prompt typed in the UI ran bash, rendered the tool card with its result,
     streamed the assistant reply, and committed it with model and cost. Screenshot capture in the
     headless browser returns blank frames (environment), so the proof is the DOM transcript.
-T5  Composer chips: profile, model, effort, permission mode, attachments (no modals). S3
-T6  Right inspector tabs: Changes, Files, Tasks, Memory, Agents/jobs. S3 S7
-T7  Command palette plus a Mod-based keybinding layer and cheat sheet. S4
-T8  File drag and drop, clipboard image paste, copy path (real paths in Tauri, upload fallback in dev). S5
-T9  Native review (RDD) panel: candidate, lenses, verdict, acknowledgement. S1
-T10 Packaging: node sidecar, per-OS artifacts via CI matrix, dependency bump workflow. S2 S6
+T5  [x] Composer chips: model, profile and permission mode pickers (no modals). S3 — 0925460
+T6  [ ] Right inspector tabs: Changes, Files, Tasks, Memory, Agents/jobs. S3 S7
+    Changes, Files, Tasks and Agents are done; the Memory tab is still open.
+T7  [x] Command palette plus a Mod-based keybinding layer and cheat sheet. S4 — ff6b45b
+T8  [ ] File drag and drop, clipboard image paste, copy path (real paths in Tauri, upload fallback in dev). S5
+T9  [ ] Native review (RDD) panel: candidate, lenses, verdict, acknowledgement. S1
+T10 [ ] Packaging: node sidecar, per-OS artifacts via CI matrix, dependency bump workflow. S2 S6
 
 ## Log
 
@@ -105,3 +106,15 @@ symlink breaks the extension's own imports) and checks that its dependencies res
 npm copy that has no dependency tree. Result: 86 commands, 36 `gentle:*`, `/gentle:profiles` reachable
 from the composer chip, and a bare `/` opens on the shell's own commands first. (3) remains: second
 design pass on the rail rows.
+
+L6. Inspector and palette landed together and were verified in the browser, not just by typecheck.
+- Changes: branch `feat/desktop-ui`, 12 changed files with status glyphs and `+n −n`; opening one renders a
+  48-line unified diff classified into meta/hunk/context/add/remove.
+- Tasks: parses `odd/tasks/*.md` and counts checked tasks; the doc now carries a checkbox per task so the
+  count means something.
+- Files: tree with directories first; Agents: honest empty state until the agent publishes activity.
+- Palette: Mod+K opens 220 items in four groups, filtering finds `/gentle:guide`, Escape closes; rail folds
+  with Mod+B; Mod+P narrows to threads; Mod+Enter sends from the focused textarea.
+Security note: the workspace reader resolves every path twice — lexically and through `realpath`, including
+the parent directory — and has tests for `..`, absolute paths, a symlinked directory, and a symlink that
+stays inside the root.

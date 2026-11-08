@@ -1,4 +1,12 @@
-import type { ClientMessage, ExtensionUiResponse, ServerMessage, SessionSummary } from "@gentle-shell/protocol";
+import type {
+	ClientMessage,
+	ExtensionUiResponse,
+	GitStatus,
+	ServerMessage,
+	SessionSummary,
+	WorkspaceFileContent,
+	WorkspaceTreeEntry,
+} from "@gentle-shell/protocol";
 
 type Listener = (message: ServerMessage) => void;
 
@@ -73,6 +81,30 @@ export class BridgeClient {
 		return this.#request<readonly SessionSummary[]>({ kind: "sessions", id });
 	}
 
+	/** Branch and per-file changes of the bridge's workspace. Not thread-scoped. */
+	gitStatus(): Promise<GitStatus> {
+		const id = this.#nextId();
+		return this.#request<GitStatus>({ kind: "git", id, action: "status" });
+	}
+
+	/** Unified diff for one workspace-relative path; an untracked file arrives as all-added. */
+	gitDiff(path: string): Promise<string> {
+		const id = this.#nextId();
+		return this.#request<string>({ kind: "git", id, action: "diff", path });
+	}
+
+	/** One directory of the workspace, directories first. `path` is workspace-relative. */
+	tree(path = ""): Promise<readonly WorkspaceTreeEntry[]> {
+		const id = this.#nextId();
+		return this.#request<readonly WorkspaceTreeEntry[]>({ kind: "fs", id, action: "tree", path });
+	}
+
+	/** Read a workspace file, capped by the bridge; `truncated` says the cap was hit. */
+	readFile(path: string): Promise<WorkspaceFileContent> {
+		const id = this.#nextId();
+		return this.#request<WorkspaceFileContent>({ kind: "fs", id, action: "read", path });
+	}
+
 	close(): void {
 		this.#socket?.close();
 		this.#socket = null;
@@ -118,6 +150,10 @@ export class BridgeClient {
 		}
 		if (message.kind === "sessions") {
 			this.#settle(message.id, message.items);
+			return;
+		}
+		if (message.kind === "git" || message.kind === "fs") {
+			this.#settle(message.id, message.data);
 			return;
 		}
 		if (message.kind === "error" && message.id) {

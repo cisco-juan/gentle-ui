@@ -1,0 +1,528 @@
+/* Right inspector: a fixed-width column of workspace reads. Tone separates surfaces, never borders. */
+
+.inspector {
+	display: flex;
+	flex-direction: column;
+	width: 360px;
+	max-width: 100%;
+	min-width: 0;
+	min-height: 0;
+	height: 100%;
+	overflow: hidden;
+	background: var(--rail);
+	padding: 8px 0 0;
+}
+
+.inspector-head {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	flex: 0 0 auto;
+	padding: 0 6px 6px;
+}
+
+.inspector-tabs {
+	display: flex;
+	gap: 2px;
+	min-width: 0;
+	overflow-x: auto;
+	scrollbar-width: none;
+}
+
+.inspector-tabs::-webkit-scrollbar {
+	display: none;
+}
+
+.inspector-tab {
+	padding: 4px 8px;
+	border-radius: 6px;
+	color: var(--muted);
+	font-size: 11.5px;
+	letter-spacing: 0.2px;
+	white-space: nowrap;
+}
+
+.inspector-tab:hover {
+	background: var(--surface-2);
+	color: var(--text-soft);
+}
+
+.inspector-tab.on {
+	background: var(--accent-dim);
+	color: var(--accent);
+}
+
+.inspector-close {
+	margin-left: auto;
+	display: grid;
+	place-items: center;
+	width: 22px;
+	height: 22px;
+	border-radius: 6px;
+	color: var(--muted);
+	font-size: 14px;
+	line-height: 1;
+}
+
+.inspector-close:hover {
+	background: var(--surface-2);
+	color: var(--text);
+}
+
+/* The body is the only part that scrolls, so the tab strip stays put. */
+.inspector-body {
+	flex: 1 1 auto;
+	min-height: 0;
+	overflow-y: auto;
+	overscroll-behavior: contain;
+	padding: 2px 6px 12px;
+	scrollbar-width: thin;
+	scrollbar-color: var(--surface-3) transparent;
+}
+
+.inspector-body::-webkit-scrollbar {
+	width: 8px;
+}
+
+.inspector-body::-webkit-scrollbar-thumb {
+	background: var(--surface-3);
+	border-radius: 8px;
+	border: 2px solid transparent;
+	background-clip: content-box;
+}
+
+.inspector-toolbar {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	padding: 4px 6px 6px;
+	min-width: 0;
+}
+
+.inspector-note {
+	flex: 1 1 auto;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	font-size: 10.5px;
+	color: var(--muted);
+}
+
+.inspector-note.mono {
+	font-family: var(--mono);
+	font-size: 11px;
+}
+
+.inspector-action {
+	flex: 0 0 auto;
+	padding: 3px 8px;
+	border-radius: 6px;
+	background: var(--surface-2);
+	color: var(--text-soft);
+	font-size: 11px;
+}
+
+.inspector-action:hover:not(:disabled) {
+	background: var(--surface-3);
+	color: var(--text);
+}
+
+.inspector-action:disabled {
+	opacity: 0.5;
+	cursor: default;
+}
+
+.inspector-empty {
+	margin: 0;
+	padding: 3px 6px 6px;
+	font-size: 11.5px;
+	line-height: 1.5;
+	color: var(--muted);
+}
+
+.inspector-error {
+	margin: 0;
+	padding: 4px 6px 6px;
+	font-family: var(--mono);
+	font-size: 11px;
+	line-height: 1.45;
+	color: var(--error);
+	overflow-wrap: anywhere;
+}
+
+.inspector-list {
+	margin: 0 0 6px;
+	padding: 0;
+	list-style: none;
+}
+
+/* ---------- changes ---------- */
+
+.change {
+	display: flex;
+	align-items: center;
+	gap: 7px;
+	width: 100%;
+	padding: 3px 6px;
+	border-radius: 5px;
+	font-family: var(--mono);
+	font-size: 11.5px;
+	color: var(--text-soft);
+	text-align: left;
+}
+
+.change:hover {
+	background: var(--surface-2);
+	color: var(--text);
+}
+
+.change.on {
+	background: var(--surface-3);
+	color: var(--text);
+}
+
+.glyph {
+	flex: 0 0 auto;
+	width: 12px;
+	font-size: 10.5px;
+	text-align: center;
+	color: var(--muted);
+}
+
+.glyph.added,
+.glyph.untracked {
+	color: var(--ok);
+}
+
+.glyph.modified {
+	color: var(--warn);
+}
+
+.glyph.deleted {
+	color: var(--error);
+}
+
+.glyph.renamed {
+	color: var(--accent);
+}
+
+.change .path {
+	flex: 1 1 auto;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	direction: ltr;
+}
+
+.counts {
+	flex: 0 0 auto;
+	font-size: 10.5px;
+	font-variant-numeric: tabular-nums;
+}
+
+.counts em {
+	font-style: normal;
+}
+
+.counts .plus {
+	color: var(--ok);
+}
+
+.counts .minus {
+	color: var(--error);
+}
+
+.tag-stage {
+	flex: 0 0 auto;
+	padding: 0 5px;
+	border-radius: 4px;
+	background: var(--surface-2);
+	font-family: var(--mono);
+	font-size: 9.5px;
+	text-transform: uppercase;
+	letter-spacing: 0.5px;
+	color: var(--muted);
+}
+
+/* ---------- diff and file preview ---------- */
+
+.inspector-diff,
+.inspector-preview {
+	margin-top: 4px;
+	padding-top: 2px;
+	box-shadow: inset 0 1px 0 var(--hairline);
+}
+
+pre.diff,
+pre.file {
+	margin: 0;
+	padding: 4px 6px 8px;
+	font-family: var(--mono);
+	font-size: 11px;
+	line-height: 1.5;
+	white-space: pre;
+	overflow-x: auto;
+	tab-size: 2;
+}
+
+pre.diff .line,
+pre.file .line {
+	display: block;
+	min-width: 0;
+	overflow-wrap: anywhere;
+	white-space: pre-wrap;
+}
+
+pre.diff .line.add {
+	color: var(--ok);
+}
+
+pre.diff .line.remove {
+	color: var(--error);
+}
+
+pre.diff .line.hunk {
+	color: var(--muted);
+}
+
+pre.diff .line.meta {
+	color: color-mix(in srgb, var(--muted) 80%, transparent);
+}
+
+pre.diff .line.context {
+	color: var(--text-soft);
+}
+
+pre.file .line {
+	color: var(--text-soft);
+}
+
+/* ---------- files ---------- */
+
+.crumbs {
+	display: flex;
+	align-items: center;
+	gap: 1px;
+	flex: 1 1 auto;
+	min-width: 0;
+	overflow-x: auto;
+	scrollbar-width: none;
+	font-family: var(--mono);
+	font-size: 11px;
+}
+
+.crumbs::-webkit-scrollbar {
+	display: none;
+}
+
+.crumb {
+	flex: 0 0 auto;
+	padding: 1px 3px;
+	border-radius: 4px;
+	color: var(--text-soft);
+}
+
+.crumb:hover {
+	background: var(--surface-2);
+	color: var(--accent);
+}
+
+.crumb-sep {
+	flex: 0 0 auto;
+	color: var(--surface-3);
+}
+
+.tree-entry {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	width: 100%;
+	padding: 3px 6px;
+	border-radius: 5px;
+	font-family: var(--mono);
+	font-size: 11.5px;
+	color: var(--text-soft);
+	text-align: left;
+}
+
+.tree-entry:hover {
+	background: var(--surface-2);
+	color: var(--text);
+}
+
+.tree-entry.dir .path {
+	color: var(--text);
+}
+
+.tree-mark {
+	flex: 0 0 auto;
+	width: 10px;
+	color: var(--muted);
+	font-size: 10px;
+}
+
+.tree-entry .path {
+	flex: 1 1 auto;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+/* ---------- tasks ---------- */
+
+.task-file {
+	padding: 4px 6px 8px;
+}
+
+.task-file + .task-file {
+	box-shadow: inset 0 1px 0 var(--hairline);
+	padding-top: 8px;
+}
+
+.task-file header {
+	display: flex;
+	align-items: baseline;
+	gap: 8px;
+	padding-bottom: 4px;
+}
+
+.task-feature {
+	flex: 1 1 auto;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	font-family: var(--mono);
+	font-size: 11px;
+	color: var(--text-soft);
+}
+
+.task-progress {
+	font-family: var(--mono);
+	font-size: 10.5px;
+	color: var(--muted);
+	font-variant-numeric: tabular-nums;
+}
+
+.task-list {
+	margin: 0;
+	padding: 0;
+	list-style: none;
+	display: flex;
+	flex-direction: column;
+	gap: 3px;
+}
+
+.task-list li {
+	display: flex;
+	align-items: baseline;
+	gap: 6px;
+	font-family: var(--mono);
+	font-size: 11px;
+	line-height: 1.45;
+	color: var(--text-soft);
+}
+
+.task-list li.done .task-text {
+	color: var(--muted);
+}
+
+.task-box {
+	flex: 0 0 auto;
+	color: var(--muted);
+	font-size: 9.5px;
+}
+
+.task-list li.done .task-box {
+	color: var(--ok);
+}
+
+.task-id {
+	flex: 0 0 auto;
+	color: var(--muted);
+	font-size: 10px;
+}
+
+.task-text {
+	flex: 1 1 auto;
+	min-width: 0;
+	overflow-wrap: anywhere;
+}
+
+/* ---------- agents ---------- */
+
+.agent {
+	padding: 5px 6px;
+	border-radius: 6px;
+}
+
+.agent + .agent {
+	box-shadow: inset 0 1px 0 var(--hairline);
+}
+
+.agent:hover {
+	background: var(--surface);
+}
+
+.agent header {
+	display: flex;
+	align-items: baseline;
+	gap: 7px;
+	min-width: 0;
+}
+
+.agent-status {
+	flex: 0 0 auto;
+	font-family: var(--mono);
+	font-size: 9.5px;
+	text-transform: uppercase;
+	letter-spacing: 0.5px;
+	color: var(--muted);
+}
+
+.agent-status.running {
+	color: var(--warn);
+}
+
+.agent-status.completed {
+	color: var(--ok);
+}
+
+.agent-status.failed,
+.agent-status.timed_out {
+	color: var(--error);
+}
+
+.agent-label {
+	flex: 1 1 auto;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	font-size: 12px;
+	color: var(--text);
+}
+
+.agent-meta {
+	display: flex;
+	gap: 5px;
+	padding-top: 1px;
+	font-size: 10px;
+	color: var(--muted);
+}
+
+.agent-meta .divider {
+	color: var(--surface-3);
+}
+
+.agent-step {
+	margin: 2px 0 0;
+	font-family: var(--mono);
+	font-size: 10.5px;
+	line-height: 1.4;
+	color: var(--muted);
+	overflow-wrap: anywhere;
+}

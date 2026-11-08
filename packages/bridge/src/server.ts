@@ -3,8 +3,10 @@ import { randomBytes } from "node:crypto";
 import { WebSocketServer, type WebSocket } from "ws";
 import type { ClientMessage, PiCommand, ServerMessage, SessionSummary } from "@gentle-shell/protocol";
 import { resolveCommand } from "./commands.ts";
+import { gitDiff, gitStatus } from "./git.ts";
 import { listSessions } from "./sessions.ts";
 import { ThreadHost, isDialogRequest } from "./thread-host.ts";
+import { listTree, readFileIn } from "./workspace.ts";
 
 export interface BridgeServerOptions {
 	readonly port?: number;
@@ -15,6 +17,8 @@ export interface BridgeServerOptions {
 	readonly sessions?: () => Promise<readonly SessionSummary[]>;
 	/** Gentle Shell package root passed to `-e`; resolved from the machine when omitted. */
 	readonly extension?: string;
+	/** Directory the inspector reads files and git state from. Defaults to the bridge's cwd. */
+	readonly workspace?: string;
 }
 
 export interface BridgeServerHandle {
@@ -25,6 +29,7 @@ export interface BridgeServerHandle {
 
 export async function startBridgeServer(options: BridgeServerOptions = {}): Promise<BridgeServerHandle> {
 	const token = options.token ?? randomBytes(24).toString("hex");
+	const workspace = options.workspace ?? process.cwd();
 	const hosts = new Map<string, ThreadHost>();
 	const sockets = new Set<WebSocket>();
 
@@ -86,6 +91,16 @@ export async function startBridgeServer(options: BridgeServerOptions = {}): Prom
 			return;
 		}
 
+		// Workspace reads belong to the bridge, not to a thread: the inspector asks without a threadId.
+		if (message.kind === "git" || message.kind === "fs") {
+			try {
+				await dispatchWorkspace(socket, message);
+			} catch (error) {
+				send(socket, { kind: "error", id: message.id, message: errorMessage(error) });
+			}
+			return;
+		}
+
 		if (message.kind === "open") {
 			const host = new ThreadHost(message, {
 				...(options.executable === undefined ? {} : { executable: options.executable }),
@@ -140,6 +155,41 @@ export async function startBridgeServer(options: BridgeServerOptions = {}): Prom
 		}
 	}
 
+	async function dispatchWorkspace(
+		socket: WebSocket,
+		message: Extract<ClientMessage, { kind: "git" | "fs" }>,
+	): Promise<void> {
+		if (message.kind === "git") {
+			if (message.action === "status") {
+				send(socket, { kind: "git", id: message.id, action: "status", data: await gitStatus(workspace) });
+				return;
+			}
+			send(socket, {
+				kind: "git",
+				id: message.id,
+				action: "diff",
+				data: await gitDiff(workspace, requirePath(message.path)),
+			});
+			return;
+		}
+
+		if (message.action === "tree") {
+			send(socket, {
+				kind: "fs",
+				id: message.id,
+				action: "tree",
+				data: await listTree(workspace, message.path ?? ""),
+			});
+			return;
+		}
+		send(socket, {
+			kind: "fs",
+			id: message.id,
+			action: "read",
+			data: await readFileIn(workspace, requirePath(message.path)),
+		});
+	}
+
 	wsServer.on("connection", (socket) => {
 		sockets.add(socket);
 		socket.on("close", () => sockets.delete(socket));
@@ -176,4 +226,10 @@ export async function startBridgeServer(options: BridgeServerOptions = {}): Prom
 
 function errorMessage(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
+}
+
+/** Incoming messages are untrusted JSON, so a path is checked before it reaches the filesystem. */
+function requirePath(path: unknown): string {
+	if (typeof path !== "string" || path.trim().length === 0) throw new Error("a path is required");
+	return path;
 }
