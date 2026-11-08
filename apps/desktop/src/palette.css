@@ -1,0 +1,138 @@
+/* Command palette. Tone separates the layers: the sheet is a surface, search and footer sit on surface-2,
+   rows on nothing at all until they are selected. No outlines, no card borders. */
+
+.palette-backdrop {
+	position: fixed;
+	inset: 0;
+	z-index: 30;
+	display: flex;
+	align-items: flex-start;
+	justify-content: center;
+	padding: 12vh 20px 20px;
+	background: rgba(8, 6, 9, 0.55);
+	backdrop-filter: blur(3px);
+}
+
+.palette {
+	display: flex;
+	flex-direction: column;
+	width: min(620px, 100%);
+	max-height: min(62vh, 560px);
+	border-radius: 14px;
+	background: var(--surface);
+	box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6);
+	overflow: hidden;
+}
+
+.palette-input {
+	width: 100%;
+	padding: 15px 17px;
+	border: none;
+	outline: none;
+	background: var(--surface-2);
+	color: var(--text);
+	font-size: 14px;
+	caret-color: var(--accent);
+}
+
+.palette-input::placeholder {
+	color: var(--muted);
+}
+
+.palette-body {
+	flex: 1 1 auto;
+	min-height: 0;
+	overflow-y: auto;
+	overscroll-behavior: contain;
+	padding: 4px 8px 8px;
+	scrollbar-width: thin;
+	scrollbar-color: var(--surface-3) transparent;
+}
+
+.palette-body::-webkit-scrollbar {
+	width: 8px;
+}
+
+.palette-body::-webkit-scrollbar-thumb {
+	background: var(--surface-3);
+	border-radius: 8px;
+	border: 2px solid transparent;
+	background-clip: content-box;
+}
+
+.palette-group {
+	margin-top: 2px;
+}
+
+.palette-group-title {
+	margin: 0;
+	padding: 8px 9px 5px;
+	font-size: 9.5px;
+	font-weight: 500;
+	letter-spacing: 1px;
+	text-transform: uppercase;
+	color: color-mix(in srgb, var(--muted) 80%, transparent);
+}
+
+.palette-group ul {
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.palette-item {
+	display: flex;
+	align-items: baseline;
+	gap: 12px;
+	width: 100%;
+	padding: 7px 10px;
+	border-radius: 8px;
+	text-align: left;
+	font-size: 12.5px;
+	color: var(--text-soft);
+}
+
+.palette-item.active {
+	background: var(--accent-dim);
+	color: var(--accent);
+}
+
+.palette-item-label {
+	flex: 1 1 auto;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.palette-item-hint {
+	flex: 0 1 auto;
+	max-width: 55%;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	font-family: var(--mono);
+	font-size: 10.5px;
+	color: var(--muted);
+}
+
+.palette-item.active .palette-item-hint {
+	color: color-mix(in srgb, var(--accent) 65%, var(--muted));
+}
+
+.palette-empty {
+	margin: 12px 10px 16px;
+	font-size: 12px;
+	color: var(--muted);
+}
+
+.palette-foot {
+	display: flex;
+	gap: 14px;
+	margin: 0;
+	padding: 9px 17px;
+	background: var(--surface-2);
+	font-family: var(--mono);
+	font-size: 10px;
+	color: color-mix(in srgb, var(--muted) 85%, transparent);
+}

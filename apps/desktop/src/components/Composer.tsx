@@ -1,4 +1,4 @@
-import { For, Show, createMemo, createSignal } from "solid-js";
+import { For, Show, createMemo, createSignal, onCleanup, onMount } from "solid-js";
 import { Icon } from "./Icon";
 
 type Menu = "model" | "profile" | "permissions" | null;
@@ -54,6 +54,13 @@ export function Composer(props: {
 		const prefix = needle.length === 0 || lower.startsWith(needle) ? 0 : 1;
 		return group * 2 + prefix;
 	}
+
+	onMount(() => {
+		// The keymap layer cannot reach this textarea, so it relays the intent as an event.
+		const onSubmit = (): void => submit();
+		document.addEventListener("gentle:submit", onSubmit);
+		onCleanup(() => document.removeEventListener("gentle:submit", onSubmit));
+	});
 
 	function submit(): void {
 		const message = text().trim();

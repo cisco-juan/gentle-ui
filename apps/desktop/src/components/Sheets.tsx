@@ -53,10 +53,11 @@ const SHORTCUTS: ReadonlyArray<{ keys: string; action: string; ready: boolean }>
 	{ keys: "Shift + Enter", action: "New line", ready: true },
 	{ keys: "Esc", action: "Interrupt the agent, or close a menu", ready: true },
 	{ keys: "/", action: "List commands", ready: true },
-	{ keys: "Mod + K", action: "Command palette", ready: false },
-	{ keys: "Mod + P", action: "Quick open thread or file", ready: false },
-	{ keys: "Mod + B", action: "Toggle the rail", ready: false },
-	{ keys: "Mod + ,", action: "Settings", ready: false },
+	{ keys: "Mod + K", action: "Command palette: actions, threads, commands, models", ready: true },
+	{ keys: "Mod + P", action: "Quick open a thread", ready: true },
+	{ keys: "Mod + B", action: "Toggle the rail", ready: true },
+	{ keys: "Mod + Shift + K", action: "This list", ready: true },
+	{ keys: "Mod + ,", action: "Settings", ready: true },
 ];
 
 export function ShortcutsSheet(props: { onClose: () => void }) {

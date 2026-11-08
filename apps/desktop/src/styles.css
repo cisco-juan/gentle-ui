@@ -81,6 +81,16 @@ kbd {
 	grid-template-columns: 268px minmax(0, 1fr);
 	height: 100%;
 	overflow: hidden;
+	transition: grid-template-columns 160ms ease;
+}
+
+.app.rail-closed {
+	grid-template-columns: 0 minmax(0, 1fr);
+}
+
+.app.rail-closed .sidebar {
+	opacity: 0;
+	pointer-events: none;
 }
 
 main {
