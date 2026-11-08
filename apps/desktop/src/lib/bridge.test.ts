@@ -129,3 +129,14 @@ test("a refused profiles change rejects with the bridge's message", async () => 
 	socket.message({ kind: "error", id: sent.id, message: "Profile already exists: alpha." });
 	await assert.rejects(waiting, /already exists/);
 });
+
+test("a permissions answer settles the request that asked for it", async () => {
+	const { client, socket } = await opened();
+	const waiting = client.permissions({ action: "status" });
+	const sent = JSON.parse(socket.sent[0] as string) as { id: string; kind: string; action: string };
+	assert.equal(sent.kind, "permissions");
+	assert.equal(sent.action, "status");
+
+	socket.message({ kind: "permissions", id: sent.id, action: "status", data: { state: "ok", default: "normal" } });
+	assert.deepEqual(await waiting, { state: "ok", default: "normal" });
+});

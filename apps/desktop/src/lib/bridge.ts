@@ -5,6 +5,7 @@ import type {
 	MemoryContextView,
 	MemoryProjectsView,
 	MemorySearchView,
+	PermissionsView,
 	ProfileMode,
 	ProfileRoute,
 	ProfilesActivation,
@@ -203,6 +204,12 @@ export class BridgeClient {
 		return this.#request<MemoryAnswer>({ kind: "memory", id, action: request.action });
 	}
 
+	/** The default permission mode for new threads. The bridge refuses anything but a lowering. */
+	permissions(request: { readonly action: "status" } | { readonly action: "default"; readonly mode: string }): Promise<PermissionsView> {
+		const id = this.#nextId();
+		return this.#request<PermissionsView>({ kind: "permissions", id, ...request });
+	}
+
 	/**
 	 * Gentle Shell's profiles file, read and written by the bridge with gentle-pi's own library. A change
 	 * the bridge refuses (a duplicate name, deleting the default) rejects with its message.
@@ -278,7 +285,7 @@ export class BridgeClient {
 			this.#settle(message.id, message.data);
 			return;
 		}
-		if (message.kind === "profiles") {
+		if (message.kind === "profiles" || message.kind === "permissions") {
 			this.#settle(message.id, message.data);
 			return;
 		}
