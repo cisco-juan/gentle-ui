@@ -99,5 +99,9 @@ Resolved in 0925460: (2)(4)(6)(7)(8)(9) layout and visual pass, (5) chips drive 
 own commands, (10) markdown rendered from JSX nodes. Verified through the DOM: the document does not
 scroll, the chat scrolls without moving the composer, the rail scrolls without moving its footer, the
 model popover lists 50 models, and `**bold**`/`` `code` ``/fenced code all render as elements.
-(1) and (3) remain: the `gentle:*` commands are absent from `get_commands` under RPC (explorer
-investigating), and the rail rows get their second design pass once those commands surface.
+(1) closed in 9c50919 and 47e1a51: a bare `pi --mode rpc` never loads gentle-pi — the launcher injects
+it with `-e` and pins the environment. The bridge now resolves the package root, realpaths it (the pnpm
+symlink breaks the extension's own imports) and checks that its dependencies resolve, which rejects the
+npm copy that has no dependency tree. Result: 86 commands, 36 `gentle:*`, `/gentle:profiles` reachable
+from the composer chip, and a bare `/` opens on the shell's own commands first. (3) remains: second
+design pass on the rail rows.

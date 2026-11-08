@@ -26,6 +26,25 @@ unsupported: `custom()` returns `undefined` and the footer/header/editor setters
 would inherit the whole delivery stack (launcher, postinstall binary downloads, generated
 `runtime/*.mjs`, version guards) and still be limited to what a terminal can draw.
 
+## Starting the agent correctly
+
+`pi --mode rpc` alone is **not** Gentle Shell. The launcher injects the package with `-e` and pins the
+environment, because gentle-pi is not declared in the user's settings (it is the host, not a plugin).
+Two details decide between working and `pi` exiting 1:
+
+- `-e` needs the **resolved** package directory, not the pnpm symlink; extension imports resolve from
+  the logical path and fail otherwise.
+- a candidate root must resolve its declared dependencies — the npm-installed copy on this machine
+  declares `pi.extensions` but has no `@heyhuynhgiabuu/pi-pretty` next to it, so it cannot load.
+
+Pinned variables: `PI_CODING_AGENT_DIR` and `GENTLE_PI_AGENT_HOME` (same agent home as the TUI, so
+sessions land where the session index looks), `GENTLE_SHELL_USER_PI_HOME`, `GENTLE_SHELL_CONFIG_HOME`,
+`PI_PROGRAM_STATUS_APP=gentle-shell`, and `GENTLE_SHELL_INTERACTIVE_HOST=1` so dialogs and subagent
+activity travel over RPC. Resolution lives in `packages/bridge/src/pi-environment.ts`; override the
+package with `GENTLE_PI_PACKAGE`.
+
+Measured effect: 30 commands with no `gentle:*` before, 86 commands with 36 `gentle:*` after.
+
 ## The protocol we speak
 
 `pi --mode rpc` is JSONL over stdin/stdout, LF-framed. Node's `readline` is not usable: it splits on
