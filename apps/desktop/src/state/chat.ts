@@ -49,7 +49,6 @@ export interface ChatController {
 	readonly profile: Accessor<string>;
 	/** Transient line for informational agent notices, which must not fill the transcript. */
 	readonly hint: Accessor<string>;
-	readonly permissionMode: Accessor<string>;
 	readonly threads: Accessor<readonly SessionSummary[]>;
 	/** True until the bridge has answered for the first time, so the rail can show a skeleton, not "no threads". */
 	readonly threadsLoading: Accessor<boolean>;
@@ -86,7 +85,6 @@ export interface ChatController {
 	/** Like `switchModel`, but a refusal rejects instead of becoming a notice, for callers that report it themselves. */
 	selectModel(provider: string, modelId: string): Promise<void>;
 	runCommand(name: string): Promise<void>;
-	setPermissionMode(mode: string): Promise<void>;
 }
 
 /**
@@ -150,8 +148,6 @@ export function createChatController(options: { url: string; cwd: string }): Cha
 	const [commands, setCommands] = createSignal<Array<{ name: string; description: string }>>([]);
 	const [models, setModels] = createSignal<Array<{ provider: string; id: string; contextWindow?: number }>>([]);
 	const [profile] = createSignal("default");
-	// The agent publishes no permission mode over RPC and refuses to change it here, so there is nothing to track.
-	const permissionMode = (): string => "normal";
 	const [hint, setHint] = createSignal("");
 	let hintTimer: ReturnType<typeof setTimeout> | undefined;
 	// The last list the bridge gave, so a relaunch paints the rail at once and corrects it when the answer comes.
@@ -818,17 +814,6 @@ function errorText(error: unknown): string {
 		await prompt(`/${name}`);
 	}
 
-	async function setPermissionMode(mode: string): Promise<void> {
-		// The agent refuses a permission change outside a terminal session, so the label must not move:
-		// it would say "yolo" while the agent kept asking for approval.
-		append({
-			kind: "notice",
-			id: nextId(),
-			text: `Permission mode stays ${permissionMode()}: the agent only changes it from a terminal session, so "${mode}" was not applied.`,
-			tone: "warning",
-		});
-	}
-
 	function invoke<T>(command: string, params: Record<string, unknown> = {}): Promise<T> {
 		if (!client || !threadId) return Promise.reject(new Error("the agent is not connected"));
 		return client.command<T>(threadId, command, params);
@@ -845,7 +830,6 @@ function errorText(error: unknown): string {
 		commands,
 		models,
 		profile,
-		permissionMode,
 		hint,
 		threads,
 		threadsLoading,
@@ -871,7 +855,6 @@ function errorText(error: unknown): string {
 		switchModel,
 		selectModel,
 		runCommand,
-		setPermissionMode,
 	};
 
 	live = controller;

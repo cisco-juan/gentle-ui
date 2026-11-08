@@ -6,9 +6,17 @@ import { SkeletonLines } from "./Skeleton";
 import { Icon } from "./Icon";
 import type { ProfilesView } from "@gentle-shell/protocol";
 import type { Attachment } from "../lib/attachments";
+import { permissionRows } from "../lib/permissions";
+import type { PermissionsPanelView } from "../state/permissions";
 import { liveChat } from "../state/chat";
 
 type Menu = "model" | "profile" | "permissions" | null;
+
+/** What the chip says: the default new threads start in, never a mode the open thread may not have. */
+function permissionDefault(view: PermissionsPanelView): string {
+	if (view.data === null) return "…";
+	return view.data.default ?? "unknown";
+}
 
 /**
  * Composer.
@@ -22,13 +30,15 @@ export function Composer(props: {
 	running: () => boolean;
 	model: () => string;
 	profile: () => string;
-	permissionMode: () => string;
+	/** The permission default new threads start in, as the bridge reports it. */
+	permissions: () => PermissionsPanelView;
+	/** Write a mode as the default for new threads; the panel refuses an elevated one. */
+	onSetPermissionDefault: (mode: string) => void;
 	commands: () => ReadonlyArray<{ name: string; description: string }>;
 	models: () => ReadonlyArray<{ provider: string; id: string }>;
 	onLoadModels: () => void;
 	onSwitchModel: (provider: string, id: string) => void;
 	onRunCommand: (name: string) => void;
-	onPermissionMode: (mode: string) => void;
 	/** The profiles file as the bridge last read it, or null before the first answer. */
 	profiles: () => ProfilesView | null;
 	/** Make a profile the default and open a new thread that starts with it. */
@@ -380,27 +390,50 @@ export function Composer(props: {
 					</div>
 
 					<div class="chip-wrap">
-						<button class="chip" classList={{ open: menu() === "permissions" }} onClick={() => toggleMenu("permissions")}>
-							permissions: {props.permissionMode()}
+						<button
+							class="chip"
+							classList={{ open: menu() === "permissions" }}
+							title="The permission mode new threads start in"
+							onClick={() => toggleMenu("permissions")}
+						>
+							permissions: {permissionDefault(props.permissions())}
 							<Icon name="caret" size={11} />
 						</button>
 						<Show when={menu() === "permissions"}>
 							<div class="popover">
-								<For each={["normal", "auto", "yolo"]}>
-									{(mode) => (
+								<For each={permissionRows(props.permissions().data)}>
+									{(row) => (
 										<button
 											class="popover-row"
-											classList={{ current: props.permissionMode() === mode }}
+											classList={{ current: row.current }}
+											disabled={props.permissions().busy}
+											title={row.terminal === null ? `New threads start in ${row.mode}` : `Set in a terminal: ${row.terminal}`}
 											onClick={() => {
-												props.onPermissionMode(mode);
-												setMenu(null);
+												props.onSetPermissionDefault(row.mode);
+												if (row.settable) setMenu(null);
 											}}
 										>
-											<span class="mono">{mode}</span>
+											<span class="mono">{row.mode}</span>
 										</button>
 									)}
 								</For>
-								<p class="popover-note">Switches the agent's permission mode for this thread.</p>
+								<p class="popover-note">
+									New threads start in the mode marked current; the open thread keeps the one it started with.
+								</p>
+								<Show when={permissionRows(props.permissions().data).some((row) => !row.settable)}>
+									<p class="popover-note">
+										Raising it is a terminal job:{" "}
+										<span class="mono">
+											{permissionRows(props.permissions().data)
+												.filter((row) => !row.settable)
+												.map((row) => row.terminal)
+												.join(" · ")}
+										</span>
+									</p>
+								</Show>
+								<Show when={props.permissions().error}>{(text) => <p class="popover-note">Not applied: {text()}</p>}</Show>
+								<Show when={props.permissions().notice}>{(text) => <p class="popover-note">{text()}</p>}</Show>
+								<Show when={props.permissions().data?.message}>{(text) => <p class="popover-note">{text()}</p>}</Show>
 							</div>
 						</Show>
 					</div>

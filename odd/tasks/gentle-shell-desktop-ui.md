@@ -5,9 +5,9 @@ pinned npm dependencies (`@earendil-works/pi-coding-agent`, `gentle-pi`), never 
 releases flow in as version bumps. The UI is a Tauri v2 shell (system webview) around a Vite frontend,
 with a Node bridge that drives the `pi` agent process.
 
-Status: T1-T8 and T11-T17 done; T9 has phase one; T10 is open. Bridge speaks to `pi --mode rpc` over a
-tokenised loopback WebSocket and re-answers extension dialogs; 85 bridge and 79 desktop tests green. See
-`docs/architecture.md`.
+Status: T1-T8, T11-T18 and T22 done; T9 has phase one; T10, T19-T21 and T23-T27 open. Bridge speaks to
+`pi --mode rpc` over a tokenised loopback WebSocket and re-answers extension dialogs; 116 bridge and 125
+desktop tests green. See `docs/architecture.md`.
 
 ## Specs
 
@@ -53,6 +53,22 @@ S11. Profiles must work from the UI, by editing the file Gentle Shell keeps them
 Quote: "creo que la posible solucion seria modificar el archivo o db que usa gentleshell directamente, puedes revisar el repo para validar como funciona, el plan es que todo funcione desde le la UI"
 Decision (user, 2026-11-08): "use this profile" makes it the global default and opens a new thread that starts with it;
 the open thread is not changed, because binding a session needs Pi's own process.
+
+S12. The transcript must show the work, not only its conclusion: the model's thinking chain and what it ran.
+Quote: "la sesion en la Terminal muestra informacion como el codigo, la cadenas de pensamientos, n la UI solo esta
+mostrando el texto final"
+
+S13. File modifications need their own components in the transcript.
+Quote: "tener componentes que muestren las modificaciones de archivos y cadanas de pensamientos como el UI"
+
+S14. The UI must always say it is still working.
+Quote: "debemos tener algun feedback en le UI que nos diga que esta trabajando aun"
+
+S15. A running agent must never block reading the chat.
+Quote: "cuando esta working el chat esta bloqueado, no puedo hacer scroll por ejemplo, creo que es por momentos"
+
+S16. Chat history must load lazily as the transcript is scrolled.
+Quote: "El chat solo muestra la ultima iteracion, deberia ir haciendo lazyloading del historial del chat con el scroll"
 
 ## Tasks
 
@@ -106,6 +122,24 @@ T19 [ ] Bridge: profiles module over gentle-pi's own library (loaded with jiti),
     native review. Checked off when both are done.
 T20 [ ] UI: Profiles sheet, composer chip, bare `/gentle:profiles` opens the sheet, "use for new threads". S11
 T21 [ ] Docs and log for the profiles work. S11
+
+T22 [x] The permission chip writes the default new threads start in, offers every mode, and says which modes are
+    terminal-only. The fake thread mode (`chat.permissionMode()`, hard-coded `normal`) is gone with its no-op
+    stub, and the palette reports the default the bridge read. S11 — this commit
+    Route: inline. Risk items 2 and 3 (writes a preference another program owns; changes a shared contract).
+    Only lowering is offered; the elevated modes show the terminal line instead of a broken click. Verified in
+    the browser against the running bridge: chip reads `normal`, four rows, `normal` marked current, `yolo`
+    refused with its command, `auto` written and marked current after the new thread. 125 desktop tests green.
+
+T23 [ ] Transcript shows the model's thinking chain, collapsed by default, and a reopened thread keeps it. S12
+T24 [ ] Tool calls that touch files render a file-change card with the path and the change; the raw argument dump
+    stops being the only view. S13
+T25 [ ] A run is visibly in progress at every moment (thinking, tool running, streaming), not only while the draft
+    is empty. S14
+T26 [ ] The transcript stays scrollable while a run is in flight: nothing transparent covers it, and
+    follow-the-stream never fights the reader. S15
+T27 [ ] Chat history loads progressively with the scroll instead of arriving whole or stopping at the last
+    iteration. S16
 
 ## Log
 
@@ -250,4 +284,42 @@ What was found (read from the installed gentle-pi 4.7.0 and Pi 1.5.0, not assume
 
 Open: per-thread binding needs a gentle-pi verb (for example `/gentle:profiles use <name>`); fallbacks and pin editing are
 not part of this pass; the terminal and the bridge can both write the file and the last writer wins.
+
+L10. 2026-11-08. Continuing the interrupted session, the permission mode came next: the bridge and the client were
+committed (`2db84a9`, `d9911ad`) but the composer chip still called a no-op stub, so choosing a mode did nothing.
+What was built and why:
+- The chip now shows the default new threads start in, read from `permissions status`, and never the open thread's
+  mode: Pi publishes no mode over RPC, so any other label would be a guess. The popover says the open thread keeps
+  the mode it started with.
+- Four rows for the four modes. `normal`/`auto` write the default and open a thread that starts in it; `yolo` and
+  `super-yolo` carry their terminal line and are refused by the panel and again by the bridge.
+- `permissionRows()` decides the rows from the bridge's answer, with the local rule standing in before it arrives.
+  RED first: `SyntaxError: does not provide an export named 'permissionRows'`, then 8/8 green.
+- `chat.permissionMode` and `chat.setPermissionMode` were deleted rather than left as dead code: the accessor
+  hard-coded `normal` and the stub's only effect was a notice claiming nothing had happened. The palette fact now
+  reports the default the bridge read.
+- Wrong turn, recorded because it cost real state: the "isolated" verification bridge was pointed at a temporary
+  config home, but the page under test kept talking to the already-running dev bridge on 7787, so clicking `auto`
+  wrote `~/.gentle-shell/gentle-ai/permission-mode.json` for real. Reverted to `normal` through the app's own chip,
+  which is the human-controlled path; the file now exists with the built-in default where it may not have existed
+  before, so behaviour is unchanged. `VITE_BRIDGE_URL` did not override the endpoint in a plain browser run — that
+  needs its own look before the next verification relies on it.
+
+L11. 2026-11-08. The user ran the app against real work and asked for four things, verbatim:
+"la sesion en la Terminal muestra informacion como el codigo, la cadenas de pensamientos, n la UI solo esta mostrando
+el texto final" / "debemos tener algun feedback en le UI que nos diga que esta trabajando aun, y tener componentes que
+muestren las modificaciones de archivos y cadanas de pensamientos como el UI" / "cuando esta working el chat esta
+bloqueado, no puedo hacer scroll por ejemplo, creo que es por momentos" / "El chat solo muestra la ultima iteracion,
+debria ir haciendo lazyloading del historial del chat con el scroll".
+Evidence read before planning (not assumed):
+- `chat.ts` handles `message_update` only for `text_delta`; Pi's wire does send `thinking_start/thinking_delta/thinking_end`
+  (Pi `docs/json.md`), so the thinking chain is dropped by the client, not missing upstream.
+- No Pi event reports a file edit or a diff; a change is visible only inside a tool's `args`/`result`.
+  `ToolCard.summary()` shows one string per call (`command`, `path`, `file_path`, `pattern`, `query`) and nothing else
+  until expanded, so a file change is currently invisible.
+- The in-transcript "working" pulse exists but only while the draft is empty, so it disappears as soon as text streams.
+- `.menu-backdrop` is `position: fixed; inset: 0` over the whole app: a composer menu left open covers the chat and
+  swallows wheel events. Candidate cause of the blocked scroll, to be reproduced before it is fixed.
+- `loadHistory` replays user and assistant text only, deliberately dropping tool and system traffic, so a reopened
+  thread loses the work that produced those answers.
 

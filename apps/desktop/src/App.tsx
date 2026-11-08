@@ -15,6 +15,7 @@ import { gridTemplate } from "./lib/layout";
 import { folderLabel, relativeTime } from "./lib/threads";
 import { createChatController } from "./state/chat";
 import { createLayout } from "./state/layout";
+import { createPermissionsPanel } from "./state/permissions";
 import { createProfilesPanel } from "./state/profiles";
 
 const PROJECT_LABEL = import.meta.env.VITE_PROJECT_LABEL ?? "";
@@ -50,6 +51,15 @@ export default function App() {
 	// The chip names the profile new threads start with, so it is read as soon as there is a bridge to ask.
 	createEffect(() => {
 		if (chat.connection() === "connected") void profiles.refresh();
+	});
+
+	// The permission default lives in a file gentle-pi owns too; the chip reads it and only lowers it.
+	const permissions = createPermissionsPanel({
+		connect: () => chat.bridge(),
+		newThread: () => chat.newThread(),
+	});
+	createEffect(() => {
+		if (chat.connection() === "connected") void permissions.refresh();
 	});
 	const openProfiles = (): void => {
 		setPalette(null);
@@ -214,7 +224,7 @@ export default function App() {
 		{ label: "workspace", value: PROJECT_LABEL || "current workspace" },
 		{ label: "model", value: chat.model() || "unknown" },
 		{ label: "profile", value: profiles.effectiveName() },
-		{ label: "permissions", value: chat.permissionMode() },
+		{ label: "permissions", value: permissions.view().data?.default ?? "unknown" },
 		{ label: "commands", value: `${chat.commands().length} available` },
 		{ label: "threads", value: `${chat.threads().length} saved` },
 		{ label: "bridge", value: chat.connection() },
@@ -266,13 +276,13 @@ export default function App() {
 					profiles={() => profiles.view().data}
 					onUseProfile={(name) => void profiles.use(name)}
 					onManageProfiles={openProfiles}
-					permissionMode={chat.permissionMode}
+					permissions={permissions.view}
 					commands={chat.commands}
 					models={chat.models}
 					onLoadModels={() => void chat.loadModels()}
 					onSwitchModel={(provider, id) => void chat.switchModel(provider, id)}
 					onRunCommand={(name) => void chat.runCommand(name)}
-					onPermissionMode={(mode) => void chat.setPermissionMode(mode)}
+					onSetPermissionDefault={(mode) => void permissions.setDefault(mode)}
 				/>
 				<StatusBar
 					connection={chat.connection}
