@@ -500,6 +500,55 @@ export interface PermissionsView {
 	readonly settable: readonly PermissionMode[];
 }
 
+/**
+ * Subagent activity for the Agents tab, read from the presence files gentle-pi writes.
+ *
+ * The agent publishes this itself, one pair of files per Pi incarnation under
+ * `<agent home>/gentle-agents/presence/`; the bridge locates the file that belongs to the open session
+ * and projects it here. The list is newest first, and one run's iteration is a second request, so a tab
+ * with a dozen runs does not carry every tool output with it.
+ */
+export interface AgentCounts {
+	readonly running: number;
+	readonly queued: number;
+	readonly waiting: number;
+	readonly finished: number;
+}
+
+/** One step of a run: what the subagent said, or a tool it called with the output it read back. */
+export type AgentItem =
+	| { readonly kind: "text"; readonly text: string }
+	| { readonly kind: "tool"; readonly name: string; readonly output: string };
+
+/** One run as the tab lists it: no iteration, so the list stays small. */
+export interface AgentTaskSummary {
+	readonly id: string;
+	readonly agent: string;
+	readonly label: string;
+	readonly status: string;
+	readonly model: string | null;
+	readonly createdAt: number | null;
+	readonly startedAt: number | null;
+	readonly endedAt: number | null;
+}
+
+/** Every run the open thread's agent published, newest first. */
+export interface AgentList {
+	readonly counts: AgentCounts;
+	readonly tasks: readonly AgentTaskSummary[];
+}
+
+/** One run with the iteration it produced, in the order it happened. */
+export interface AgentDetail {
+	readonly id: string;
+	readonly agent: string;
+	readonly label: string;
+	readonly status: string;
+	readonly items: readonly AgentItem[];
+	/** True when the read hit its caps, so what is shown is not the whole run. */
+	readonly truncated: boolean;
+}
+
 export type ClientMessage =
 	| ({ readonly kind: "open"; readonly id: string } & OpenThreadRequest)
 	| { readonly kind: "close"; readonly threadId: string }
@@ -566,7 +615,19 @@ export type ClientMessage =
 	| { readonly kind: "profiles"; readonly id: string; readonly action: "rename"; readonly name: string; readonly to: string }
 	| { readonly kind: "profiles"; readonly id: string; readonly action: "delete"; readonly name: string }
 	/** Make a profile the global default and set the orchestrator it selects. */
-	| { readonly kind: "profiles"; readonly id: string; readonly action: "activate"; readonly name: string };
+	| { readonly kind: "profiles"; readonly id: string; readonly action: "activate"; readonly name: string }
+	/**
+	 * Subagent activity of the thread whose session file is `sessionPath`. Without one the bridge answers
+	 * with the most recently written presence file, which is the best it can do with no thread named.
+	 */
+	| { readonly kind: "agents"; readonly id: string; readonly action: "list"; readonly sessionPath?: string }
+	| {
+			readonly kind: "agents";
+			readonly id: string;
+			readonly action: "detail";
+			readonly sessionPath?: string;
+			readonly taskId: string;
+	  };
 
 export type ServerMessage =
 	| {
@@ -617,6 +678,8 @@ export type ServerMessage =
 			readonly kind: "permissions";
 			readonly id: string;
 	  } & PermissionsResult)
+	/** Answer to either `agents` action; which one is known from the request id. */
+	| { readonly kind: "agents"; readonly id: string; readonly data: AgentList | AgentDetail }
 	| { readonly kind: "error"; readonly id?: string; readonly message: string };
 
 /** One memory answer, tagged with the action that asked for it. */

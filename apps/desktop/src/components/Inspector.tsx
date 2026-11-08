@@ -1,5 +1,6 @@
 import { For, Show, createMemo, createSignal, onCleanup, type JSX } from "solid-js";
 import "../inspector.css";
+import { agentCountsLabel, agentDuration } from "../lib/agents";
 import {
 	INSPECTOR_TABS,
 	breadcrumb,
@@ -13,6 +14,7 @@ import {
 } from "../state/inspector";
 import { REVIEW_TAB, createReviewPanel } from "../state/review";
 import { MEMORY_TAB, createMemoryPanel } from "../state/memory";
+import { AgentModal } from "./AgentModal";
 import { ReviewTab } from "./ReviewTab";
 import { MemoryTab } from "./MemoryTab";
 import { SkeletonLines } from "./Skeleton";
@@ -30,7 +32,7 @@ type OwnedTab = "review" | "memory";
  * the bridge through the chat controller it is given.
  */
 export function Inspector(props: { chat: ChatControllerLike; onClose?: () => void }): JSX.Element {
-	const inspector = createInspector({ connect: () => props.chat.bridge() });
+	const inspector = createInspector({ connect: () => props.chat.bridge(), activePath: () => props.chat.activePath() });
 	const review = createReviewPanel({ connect: () => props.chat.bridge() });
 	const memory = createMemoryPanel({ connect: () => props.chat.bridge() });
 	// Review and Memory keep their own switch instead of widening the inspector's tab union: the other
@@ -371,64 +373,72 @@ function TasksTab(props: { inspector: Inspector }): JSX.Element {
 }
 
 function AgentsTab(props: { inspector: Inspector }): JSX.Element {
-	const activity = () => props.inspector.agents();
+	const view = () => props.inspector.agents();
 
 	return (
 		<>
 			<div class="inspector-toolbar">
-				<span class="inspector-note">
-					{activity() === null
-						? ""
-						: `${activity()?.running ?? 0} running · ${activity()?.queued ?? 0} queued · ${activity()?.finished ?? 0} finished`}
-				</span>
+				<span class="inspector-note">{agentCountsLabel(view().counts)}</span>
+				<button
+					type="button"
+					class="inspector-action"
+					disabled={view().loading}
+					onClick={() => void props.inspector.loadAgents()}
+				>
+					{view().loading ? "reading…" : "refresh"}
+				</button>
 			</div>
 
-			<Show when={activity() === null}>
-				<p class="inspector-empty">
-					{props.inspector.connected()
-						? "The agent has not published subagent activity. The tab stays empty until it does."
-						: "Waiting for the bridge before subagent activity can arrive."}
-				</p>
+			<Show when={view().error}>{(error) => <p class="inspector-error">{error()}</p>}</Show>
+			<Show when={view().loading && view().tasks.length === 0}>
+				<SkeletonLines count={4} label="Reading subagent activity" />
 			</Show>
-
-			<Show when={activity() !== null && (activity()?.tasks.length ?? 0) === 0}>
+			<Show when={!view().loading && view().error === null && view().tasks.length === 0}>
 				<p class="inspector-empty">No subagent activity right now.</p>
 			</Show>
 
+			{/* Newest first, and every row is a button: the run it names is what a click opens. */}
 			<ul class="inspector-list">
-				<For each={activity()?.tasks ?? []}>
+				<For each={view().tasks}>
 					{(task) => (
 						<li class="agent">
-							<header>
-								<span class={`agent-status ${task.status}`}>{task.status}</span>
-								<span class="agent-label">{task.label}</span>
-							</header>
-							<div class="agent-meta mono">
-								<span>{task.agent}</span>
-								<span class="divider">·</span>
-								<span>
-									{task.turns} turns · {task.toolCalls} tools
+							<button
+								type="button"
+								class="agent-open"
+								title={`Open ${task.label}`}
+								onClick={() => void props.inspector.openAgent(task.id)}
+							>
+								<span class="agent-head">
+									<span class={`agent-status ${task.status}`}>{task.status}</span>
+									<span class="agent-label">{task.label}</span>
 								</span>
-								<Show when={task.elapsedMs !== null}>
-									<span class="divider">·</span>
-									<span>{formatDuration(task.elapsedMs ?? 0)}</span>
-								</Show>
-							</div>
-							<Show when={task.lastStep.length > 0}>
-								<p class="agent-step">{task.lastStep}</p>
-							</Show>
-							<Show when={task.error}>{(error) => <p class="inspector-error">{error()}</p>}</Show>
+								<span class="agent-meta mono">
+									<span>{task.agent}</span>
+									<Show when={task.model}>
+										{(model) => (
+											<>
+												<span class="divider">·</span>
+												<span>{model()}</span>
+											</>
+										)}
+									</Show>
+									<Show when={agentDuration(task)}>
+										{(duration) => (
+											<>
+												<span class="divider">·</span>
+												<span>{duration()}</span>
+											</>
+										)}
+									</Show>
+								</span>
+							</button>
 						</li>
 					)}
 				</For>
 			</ul>
+
+			<Show when={props.inspector.agentDetail()}>{(open) => <AgentModal detail={open()} onClose={() => props.inspector.closeAgent()} />}</Show>
 		</>
 	);
 }
 
-function formatDuration(ms: number): string {
-	const seconds = Math.round(ms / 1000);
-	if (seconds < 60) return `${seconds}s`;
-	const minutes = Math.floor(seconds / 60);
-	return `${minutes}m${String(seconds % 60).padStart(2, "0")}s`;
-}

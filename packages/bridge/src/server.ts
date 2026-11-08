@@ -2,6 +2,7 @@ import { createServer } from "node:http";
 import { randomBytes } from "node:crypto";
 import { WebSocketServer, type WebSocket } from "ws";
 import type { ClientMessage, PermissionsResult, PiCommand, ProfilesResult, ServerMessage, SessionSummary } from "@gentle-shell/protocol";
+import { agentDetail, listAgents, type AgentsOptions } from "./agents.ts";
 import { resolveCommand } from "./commands.ts";
 import { gitDiff, gitStatus } from "./git.ts";
 import { readHistoryPage } from "./history.ts";
@@ -52,6 +53,8 @@ export interface BridgeServerOptions {
 	readonly profiles?: ProfilesOptions;
 	/** Where gentle-pi keeps the default permission mode; a test points this at a scratch config home. */
 	readonly permissions?: PermissionsOptions;
+	/** Where the agent publishes subagent activity; a test points this at a scratch agent home. */
+	readonly agents?: AgentsOptions;
 }
 
 export interface BridgeServerHandle {
@@ -194,6 +197,18 @@ export async function startBridgeServer(options: BridgeServerOptions = {}): Prom
 			return;
 		}
 
+		// Subagent activity belongs to the thread whose session file is open. The agent publishes it under
+		// its own home, one file per Pi incarnation, so the session id in the file name is what finds the
+		// right one; the answer is read from disk and needs no threadId.
+		if (message.kind === "agents") {
+			try {
+				await dispatchAgents(socket, message);
+			} catch (error) {
+				send(socket, { kind: "error", id: message.id, message: errorMessage(error) });
+			}
+			return;
+		}
+
 		// Uploads belong to the agent home, not to a thread: the composer may attach a file before a
 		// thread exists, and the path is what the next prompt carries.
 		if (message.kind === "upload") {
@@ -292,7 +307,7 @@ export async function startBridgeServer(options: BridgeServerOptions = {}): Prom
 			...(options.extension === undefined ? {} : { extension: options.extension }),
 		}).env["PI_CODING_AGENT_DIR"];
 		if (resolved === undefined || resolved.trim().length === 0) {
-			throw new Error("the agent home is unknown; uploads need PI_CODING_AGENT_DIR");
+			throw new Error("the agent home is unknown; this needs PI_CODING_AGENT_DIR");
 		}
 		uploadsHome = resolved;
 		return uploadsHome;
@@ -434,8 +449,33 @@ export async function startBridgeServer(options: BridgeServerOptions = {}): Prom
 		}
 	}
 
-	async function dispatchWorkspace(
+	/**
+	 * Subagent activity of the open thread, projected by the bridge from gentle-pi's presence files.
+	 *
+	 * The files sit under the agent home the child process runs with; an explicit option wins, so a test
+	 * can point the family at a scratch directory.
+	 */
+	async function dispatchAgents(
 		socket: WebSocket,
+		message: Extract<ClientMessage, { kind: "agents" }>,
+	): Promise<void> {
+		const agentOptions: AgentsOptions = { agentHome: options.agents?.agentHome ?? agentHome() };
+		const sessionPath =
+			typeof message.sessionPath === "string" && message.sessionPath.trim().length > 0 ? message.sessionPath : undefined;
+		const scope = sessionPath === undefined ? agentOptions : { ...agentOptions, sessionPath };
+
+		if (message.action === "detail") {
+			send(socket, { kind: "agents", id: message.id, data: await agentDetail({ ...scope, taskId: message.taskId }) });
+			return;
+		}
+		if (message.action === "list") {
+			send(socket, { kind: "agents", id: message.id, data: await listAgents(scope) });
+			return;
+		}
+		throw new Error(`unsupported agents action: ${String((message as { action?: unknown }).action)}`);
+	}
+
+	async function dispatchWorkspace(		socket: WebSocket,
 		message: Extract<ClientMessage, { kind: "git" | "fs" }>,
 	): Promise<void> {
 		if (message.kind === "git") {

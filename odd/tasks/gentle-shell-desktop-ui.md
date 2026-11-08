@@ -5,7 +5,7 @@ pinned npm dependencies (`@earendil-works/pi-coding-agent`, `gentle-pi`), never 
 releases flow in as version bumps. The UI is a Tauri v2 shell (system webview) around a Vite frontend,
 with a Node bridge that drives the `pi` agent process.
 
-Status: T1-T8, T11-T18, T22-T27, T31 and T32 done; T9 has phase one; T10, T19-T21 and T28-T30 open. Bridge speaks to
+Status: T1-T8, T11-T18, T22-T27, T29-T32 done; T9 has phase one; T10, T19-T21 and T28 open. Bridge speaks to
 `pi --mode rpc` over a tokenised loopback WebSocket and re-answers extension dialogs; 116 bridge and 125
 desktop tests green. See `docs/architecture.md`.
 
@@ -343,9 +343,24 @@ What was built and why:
   before, so behaviour is unchanged. `VITE_BRIDGE_URL` did not override the endpoint in a plain browser run — that
   needs its own look before the next verification relies on it.
 
-T29 [ ] Agents tab: newest first, and a click on a subagent opens a modal showing that run's iteration. S17
-T30 [ ] Inspector data is scoped to the open thread: switching chats must not leave the previous thread's
+T29 [x] Agents tab: newest first, and a click on a subagent opens a modal showing that run's iteration. S17
+    The tab no longer renders the `setWidget` line: the bridge reads gentle-pi's own presence files
+    (`<agent home>/gentle-agents/presence/`), picks the incarnation whose session hash matches the open session
+    file, and projects it — newest first by `startedAt`, items clamped (4000 chars, last 200) with a `truncated`
+    flag, never throwing on a broken payload. Two actions, `list` and `detail`, so the list stays small. A row is
+    a real button; the modal shows the run's steps (text and tool output), closes on Escape and restores focus.
+    15 bridge tests and 9 desktop tests, RED first. Verified in the app with a two-session fixture: rows newest
+    first, a click showed text → `read` with output → text, Escape closed it. Route: one writer, then the parent
+    verified and committed. Risk: item 3 (a new wire family) — the reader is confined to the presence directory
+    and refuses any path outside it.
+T30 [x] Inspector data is scoped to the open thread: switching chats must not leave the previous thread's
     changes, files, tasks, memory or agents on screen. S18
+    Agents is the only per-thread tab and it is now keyed by `activePath()`: a switch empties the tab, closes the
+    modal and drops any answer still in flight for the previous thread (generation counter). Verified in the app:
+    switching from one session to the other showed that session's runs, not the previous one's.
+    Open follow-up: Changes/Files/Tasks/Memory/Review are workspace-scoped by design and still refetch only when
+    their tab is opened — they can look stale after a switch, which is a different bug from this one and is not
+    covered here. The user decides whether they should refresh on switch or say they are workspace-wide.
 T31 [x] The permission menu is wide enough for the selected mode to be readable. S19
     300px instead of 240px, and the current row now carries a check plus a `current` label: a background tint alone
     was the whole signal. Verified in the app: width 300, row reads "✓ normal CURRENT". Risk: none.
@@ -358,6 +373,16 @@ T28 [ ] A thread opens showing the oldest row of its first page for a moment bef
     the follow effect runs before the skeleton leaves and the height settles. Visible in the app (empty → top →
     bottom within a few seconds); must not be a jump the reader can catch. S16
     Found while verifying T27; measured, not guessed.
+
+L14. 2026-11-08. Delivery plan the user announced for when these tasks are done, verbatim: "al finalizar todas
+estas tareas vamos a crear el repo en mi perfil, lo llamaremos gentle-ui, tendremos la documentacion completa en
+inlges y espanol, haremos referencia a gentle shell y sus herramientas, ademas, tendremos 2 ramas, master/main y
+develop, el repo sera publico, y pondremos la medalla de maded with gentle ia".
+Not executed, and deliberately not started here. Points to settle at that moment, because they change what gets
+published: the owner and exact slug (`gentle-ui`), the license, whether the history is squashed or carries these
+work-unit commits, what belongs in the public tree (this repo's `odd/` working notes and any screenshot or session
+path that names the user's machine), and the badge wording ("Made with Gentle AI") and where it points. Creating
+the repository and pushing are separate human decisions under ordinary policy.
 
 L13. 2026-11-08. Four UI adjustments after using the app, verbatim:
 "Ordenar los agentes para que los mas reciente arriba y al darle click a un subagente este abra un modal con la
