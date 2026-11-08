@@ -21,6 +21,9 @@ export default function App() {
 				project={PROJECT_LABEL || "current workspace"}
 				connection={chat.connection()}
 				statuses={chat.statuses()}
+				threads={chat.threads()}
+				activePath={chat.activePath()}
+				onSelectThread={(path) => void chat.switchThread(path)}
 				onNewThread={() => void chat.newThread()}
 				onInterrupt={() => void chat.interrupt()}
 			/>

@@ -1,7 +1,7 @@
 import { batch, createSignal, type Accessor } from "solid-js";
-import type { ExtensionUiRequest, ExtensionUiResponse, ServerMessage } from "@gentle-shell/protocol";
+import type { ExtensionUiRequest, ExtensionUiResponse, ServerMessage, SessionSummary } from "@gentle-shell/protocol";
 import { BridgeClient } from "../lib/bridge";
-import { textOf, type AssistantMessage, type AssistantStreamEvent, type PiEnvelope, type ToolResultPayload } from "../lib/records";
+import { textOf, type AssistantMessage, type AssistantStreamEvent, type ContentBlock, type PiEnvelope, type ToolResultPayload } from "../lib/records";
 
 export type ChatItem =
 	| { kind: "user"; id: string; text: string }
@@ -28,10 +28,15 @@ export interface ChatController {
 	readonly cost: Accessor<number>;
 	readonly statuses: Accessor<Record<string, string>>;
 	readonly commands: Accessor<Array<{ name: string; description: string }>>;
+	readonly threads: Accessor<readonly SessionSummary[]>;
+	/** Session file the open thread is showing, `null` for a thread with no file yet. */
+	readonly activePath: Accessor<string | null>;
 	connect(): Promise<void>;
 	send(text: string): Promise<void>;
 	interrupt(): Promise<void>;
 	newThread(): Promise<void>;
+	switchThread(path: string): Promise<void>;
+	refreshThreads(): Promise<void>;
 	answerPermission(requestId: string, response: ExtensionUiResponse): void;
 }
 
@@ -45,6 +50,8 @@ export function createChatController(options: { url: string; cwd: string }): Cha
 	const [cost, setCost] = createSignal(0);
 	const [statuses, setStatuses] = createSignal<Record<string, string>>({});
 	const [commands, setCommands] = createSignal<Array<{ name: string; description: string }>>([]);
+	const [threads, setThreads] = createSignal<readonly SessionSummary[]>([]);
+	const [activePath, setActivePath] = createSignal<string | null>(null);
 
 	let client: BridgeClient | null = null;
 	let threadId: string | null = null;
@@ -201,8 +208,11 @@ export function createChatController(options: { url: string; cwd: string }): Cha
 			const opened = await next.open(options.cwd);
 			threadId = opened.threadId;
 			client = next;
+			setActivePath(sessionFileOf(opened.state));
 			setConnection("connected");
 			await bootstrap(next, opened.state);
+			await loadHistory(next, opened.threadId);
+			await refreshThreads();
 		} catch (error) {
 			setConnection("failed");
 			append({
@@ -259,8 +269,12 @@ export function createChatController(options: { url: string; cwd: string }): Cha
 	async function newThread(): Promise<void> {
 		if (!client || !threadId) return;
 		flushDraft();
-		setItems([]);
-		setCost(0);
+		batch(() => {
+			setItems([]);
+			setDraft("");
+			setCost(0);
+			setActivePath(null);
+		});
 		try {
 			await client.command(threadId, "new_session");
 		} catch (error) {
@@ -271,6 +285,81 @@ export function createChatController(options: { url: string; cwd: string }): Cha
 				tone: "error",
 			});
 		}
+		await refreshThreads();
+	}
+
+	/** Switch the open Pi thread to a session file and redraw the transcript from its history. */
+	async function switchThread(path: string): Promise<void> {
+		if (!client || !threadId || path === activePath()) return;
+		const active = client;
+		const id = threadId;
+		try {
+			await active.command(id, "switch_session", { sessionPath: path });
+			batch(() => {
+				setItems([]);
+				setDraft("");
+				setCost(0);
+				setActivePath(path);
+			});
+			await loadHistory(active, id);
+			await refreshState(active, id);
+		} catch (error) {
+			append({
+				kind: "notice",
+				id: nextId(),
+				text: error instanceof Error ? error.message : String(error),
+				tone: "error",
+			});
+			return;
+		}
+		await refreshThreads();
+	}
+
+	/** Re-read the live state so the model chip describes the thread that is now open. */
+	async function refreshState(active: BridgeClient, id: string): Promise<void> {
+		const state = await active.command<{ model?: { id?: string } }>(id, "get_state").catch(() => null);
+		const modelId = state?.model?.id;
+		if (typeof modelId === "string" && modelId.length > 0) setModel(modelId);
+	}
+
+	/** Re-read the bridge's session index. Failures keep the rail on its last known list. */
+	async function refreshThreads(): Promise<void> {
+		if (!client) return;
+		try {
+			setThreads(await client.sessions());
+		} catch {
+			// The bridge may be older than this UI; a missing index must not break the chat.
+		}
+	}
+
+	/** Replay a session's user and assistant text; system and tool traffic stays out of the pane. */
+	async function loadHistory(active: BridgeClient, id: string): Promise<void> {
+		let messages: readonly HistoryMessage[] = [];
+		try {
+			const listed = await active.command<{ messages?: readonly HistoryMessage[] }>(id, "get_messages");
+			messages = listed.messages ?? [];
+		} catch {
+			return;
+		}
+
+		const history: ChatItem[] = [];
+		for (const message of messages) {
+			if (message.role !== "user" && message.role !== "assistant") continue;
+			const text = textOf(message.content).trim();
+			if (text.length === 0) continue;
+			if (message.role === "user") {
+				history.push({ kind: "user", id: nextId(), text });
+				continue;
+			}
+			const model_ = message.model;
+			history.push({
+				kind: "assistant",
+				id: nextId(),
+				text,
+				...(typeof model_ === "string" && model_.length > 0 ? { model: model_ } : {}),
+			});
+		}
+		setItems(history);
 	}
 
 	function answerPermission(requestId: string, response: ExtensionUiResponse): void {
@@ -294,10 +383,26 @@ export function createChatController(options: { url: string; cwd: string }): Cha
 		cost,
 		statuses,
 		commands,
+		threads,
+		activePath,
 		connect,
 		send,
 		interrupt,
 		newThread,
+		switchThread,
+		refreshThreads,
 		answerPermission,
 	};
+}
+
+interface HistoryMessage {
+	readonly role: string;
+	readonly content?: string | readonly ContentBlock[];
+	readonly model?: string;
+}
+
+/** Session file the `open` handshake reported, when it named one. */
+function sessionFileOf(state: unknown): string | null {
+	const view = state as { sessionFile?: unknown } | null;
+	return typeof view?.sessionFile === "string" && view.sessionFile.length > 0 ? view.sessionFile : null;
 }

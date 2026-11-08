@@ -69,6 +69,19 @@ export interface SessionState {
 	readonly [key: string]: unknown;
 }
 
+/** One entry of the bridge's session index, as shown in the sidebar. */
+export interface SessionSummary {
+	/** Absolute path of the session JSONL file; this is the value `switch_session` takes. */
+	readonly path: string;
+	/** Workspace recorded in the session header, empty when the file does not say. */
+	readonly cwd: string;
+	/** Explicit session name, else the trimmed first user message, else the file basename. */
+	readonly title: string;
+	/** File modification time in epoch milliseconds. */
+	readonly updatedAt: number;
+	readonly model?: string;
+}
+
 /** One slash command, skill, or prompt template advertised by the agent. */
 export interface SlashCommand {
 	readonly name: string;
@@ -91,7 +104,8 @@ export type ClientMessage =
 			readonly threadId: string;
 			readonly requestId: string;
 			readonly response: ExtensionUiResponse;
-	  };
+	  }
+	| { readonly kind: "sessions"; readonly id: string };
 
 export type ServerMessage =
 	| {
@@ -113,4 +127,5 @@ export type ServerMessage =
 	| { readonly kind: "ui-request"; readonly threadId: string; readonly request: ExtensionUiRequest }
 	| { readonly kind: "log"; readonly threadId: string; readonly line: string }
 	| { readonly kind: "exited"; readonly threadId: string; readonly code: number | null }
+	| { readonly kind: "sessions"; readonly id: string; readonly items: readonly SessionSummary[] }
 	| { readonly kind: "error"; readonly id?: string; readonly message: string };

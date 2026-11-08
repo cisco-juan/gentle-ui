@@ -1,4 +1,4 @@
-import type { ClientMessage, ExtensionUiResponse, ServerMessage } from "@gentle-shell/protocol";
+import type { ClientMessage, ExtensionUiResponse, ServerMessage, SessionSummary } from "@gentle-shell/protocol";
 
 type Listener = (message: ServerMessage) => void;
 
@@ -67,6 +67,12 @@ export class BridgeClient {
 		this.#send({ kind: "ui-response", threadId, requestId, response });
 	}
 
+	/** Ask the bridge for its session index, newest first. */
+	sessions(): Promise<readonly SessionSummary[]> {
+		const id = this.#nextId();
+		return this.#request<readonly SessionSummary[]>({ kind: "sessions", id });
+	}
+
 	close(): void {
 		this.#socket?.close();
 		this.#socket = null;
@@ -108,6 +114,10 @@ export class BridgeClient {
 		if (message.kind === "result") {
 			if (message.ok) this.#settle(message.id, message.data);
 			else this.#fail(message.id, new Error(message.error ?? `${message.command} failed`));
+			return;
+		}
+		if (message.kind === "sessions") {
+			this.#settle(message.id, message.items);
 			return;
 		}
 		if (message.kind === "error" && message.id) {

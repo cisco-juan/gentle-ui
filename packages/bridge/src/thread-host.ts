@@ -32,12 +32,15 @@ export class ThreadHost {
 
 	/** Confirm the child answers, optionally resume a session, and cache the initial state. */
 	async ready(request: OpenThreadRequest): Promise<unknown> {
-		const state = await this.pi.send("get_state");
+		let state = await this.pi.send("get_state");
 		if (request.sessionPath !== undefined) {
 			await this.pi.send("switch_session", { sessionPath: request.sessionPath });
+			// The cached state has to describe the resumed session, not the fresh one it replaced.
+			state = await this.pi.send("get_state");
 		}
 		if (request.provider !== undefined && request.model !== undefined) {
 			await this.pi.send("set_model", { provider: request.provider, model: request.model });
+			state = await this.pi.send("get_state");
 		}
 		this.state = state;
 		return state;

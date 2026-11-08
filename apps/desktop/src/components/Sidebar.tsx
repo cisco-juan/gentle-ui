@@ -1,13 +1,20 @@
-import { For, Show } from "solid-js";
+import { For, Show, createMemo } from "solid-js";
+import type { SessionSummary } from "@gentle-shell/protocol";
+import { groupThreads, relativeTime } from "../lib/threads";
 
-/** Left rail: where the workspace lives and what the agent is doing right now. */
+/** Left rail: saved threads grouped by project, plus where the workspace lives and the live statuses. */
 export function Sidebar(props: {
 	project: string;
 	connection: "connecting" | "connected" | "failed";
 	statuses: Record<string, string>;
+	threads: readonly SessionSummary[];
+	activePath: string | null;
+	onSelectThread: (path: string) => void;
 	onNewThread: () => void;
 	onInterrupt: () => void;
 }) {
+	const groups = createMemo(() => groupThreads(props.threads));
+
 	return (
 		<aside class="sidebar">
 			<div class="brand">
@@ -15,14 +22,33 @@ export function Sidebar(props: {
 				<span>gentle shell</span>
 			</div>
 
-			<nav class="rail">
-				<span class="rail-item active">Chat</span>
-				<span class="rail-item">Changes</span>
-				<span class="rail-item">Files</span>
-				<span class="rail-item">Tasks</span>
-				<span class="rail-item">Memory</span>
-				<span class="rail-item">Agents</span>
-			</nav>
+			<section class="threads">
+				<p class="label">threads</p>
+				<Show when={props.threads.length > 0} fallback={<p class="thread-empty">no saved threads yet</p>}>
+					<For each={groups()}>
+						{(group) => (
+							<div class="thread-group">
+								<p class="thread-project" title={group.cwd}>
+									{group.label}
+								</p>
+								<For each={group.items}>
+									{(thread) => (
+										<button
+											class="thread-item"
+											classList={{ active: thread.path === props.activePath }}
+											title={thread.path}
+											onClick={() => props.onSelectThread(thread.path)}
+										>
+											<span class="thread-title">{thread.title}</span>
+											<span class="thread-time">{relativeTime(thread.updatedAt)}</span>
+										</button>
+									)}
+								</For>
+							</div>
+						)}
+					</For>
+				</Show>
+			</section>
 
 			<section class="project">
 				<p class="label">workspace</p>

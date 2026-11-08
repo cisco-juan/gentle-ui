@@ -101,22 +101,72 @@ main {
 	font-family: var(--mono);
 }
 
-.rail {
+/* ---------- thread list ---------- */
+
+.threads {
 	display: flex;
 	flex-direction: column;
-	gap: 2px;
+	gap: 10px;
 }
 
-.rail-item {
-	padding: 6px 9px;
+.thread-group {
+	display: flex;
+	flex-direction: column;
+	gap: 1px;
+}
+
+.thread-project {
+	margin: 0 0 3px;
+	font-family: var(--mono);
+	font-size: 11px;
+	letter-spacing: 0.3px;
+	color: var(--text);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.thread-item {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) auto;
+	align-items: center;
+	gap: 8px;
+	padding: 5px 8px;
 	border-radius: 7px;
+	border-left: 2px solid transparent;
 	color: var(--muted);
-	font-size: 13px;
+	font-size: 12px;
+	text-align: left;
+	transition: background 120ms ease, color 120ms ease;
 }
 
-.rail-item.active {
+.thread-item:hover {
 	background: var(--surface-2);
 	color: var(--text);
+}
+
+.thread-item.active {
+	background: var(--surface-2);
+	border-left-color: var(--accent);
+	color: var(--text);
+}
+
+.thread-title {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.thread-time {
+	font-family: var(--mono);
+	font-size: 10px;
+	color: var(--muted);
+}
+
+.thread-empty {
+	margin: 0;
+	font-size: 11px;
+	color: var(--muted);
 }
 
 .label {

@@ -1,8 +1,9 @@
 import { createServer } from "node:http";
 import { randomBytes } from "node:crypto";
 import { WebSocketServer, type WebSocket } from "ws";
-import type { ClientMessage, PiCommand, ServerMessage } from "@gentle-shell/protocol";
+import type { ClientMessage, PiCommand, ServerMessage, SessionSummary } from "@gentle-shell/protocol";
 import { resolveCommand } from "./commands.ts";
+import { listSessions } from "./sessions.ts";
 import { ThreadHost, isDialogRequest } from "./thread-host.ts";
 
 export interface BridgeServerOptions {
@@ -10,6 +11,8 @@ export interface BridgeServerOptions {
 	readonly token?: string;
 	readonly executable?: string;
 	readonly env?: Readonly<Record<string, string>>;
+	/** Session index behind the `sessions` request. Tests inject one instead of hitting the disk. */
+	readonly sessions?: () => Promise<readonly SessionSummary[]>;
 }
 
 export interface BridgeServerHandle {
@@ -71,6 +74,16 @@ export async function startBridgeServer(options: BridgeServerOptions = {}): Prom
 	}
 
 	async function dispatch(socket: WebSocket, message: ClientMessage): Promise<void> {
+		if (message.kind === "sessions") {
+			const list = options.sessions ?? listSessions;
+			try {
+				send(socket, { kind: "sessions", id: message.id, items: await list() });
+			} catch (error) {
+				send(socket, { kind: "error", id: message.id, message: errorMessage(error) });
+			}
+			return;
+		}
+
 		if (message.kind === "open") {
 			const host = new ThreadHost(message, {
 				...(options.executable === undefined ? {} : { executable: options.executable }),
