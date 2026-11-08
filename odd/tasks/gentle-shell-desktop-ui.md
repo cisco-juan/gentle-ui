@@ -51,11 +51,15 @@ T4  [x] Chat view: streaming messages, collapsible tool cards, inline permission
     streamed the assistant reply, and committed it with model and cost. Screenshot capture in the
     headless browser returns blank frames (environment), so the proof is the DOM transcript.
 T5  [x] Composer chips: model, profile and permission mode pickers (no modals). S3 — 0925460
-T6  [ ] Right inspector tabs: Changes, Files, Tasks, Memory, Agents/jobs. S3 S7
-    Changes, Files, Tasks and Agents are done; the Memory tab is still open.
+T6  [ ] Right inspector tabs: Changes, Files, Tasks, Memory, Agents, Review. S3 S7
+    Changes, Files, Tasks, Agents and Review are done; the Memory tab is still open.
 T7  [x] Command palette plus a Mod-based keybinding layer and cheat sheet. S4 — ff6b45b
-T8  [ ] File drag and drop, clipboard image paste, copy path (real paths in Tauri, upload fallback in dev). S5
+T8  [x] File drag and drop, clipboard image paste, copy path (upload fallback in dev). S5 — 810c1e7
+    Real Tauri paths remain unimplemented; the tested path is the upload fallback, which also works
+    when the file cannot be reached from the app.
 T9  [ ] Native review (RDD) panel: candidate, lenses, verdict, acknowledgement. S1
+    Phase one done — cd987b1 — mode, authority, frozen budget, target, risk assessment, the consent card and
+    start. Lens captures, verdicts and acknowledgement are phase two.
 T10 [ ] Packaging: node sidecar, per-OS artifacts via CI matrix, dependency bump workflow. S2 S6
 
 ## Log
@@ -118,3 +122,11 @@ L6. Inspector and palette landed together and were verified in the browser, not 
 Security note: the workspace reader resolves every path twice — lexically and through `realpath`, including
 the parent directory — and has tests for `..`, absolute paths, a symlinked directory, and a symlink that
 stays inside the root.
+
+L7. Editable layout and the first real visual pass. Commits 8735972 (screenshot loop) and 9022ffd.
+Panels are drag-resizable, toggleable from the status line and the palette, and the arrangement persists per
+install; verified by dragging the inspector to 480px and reloading, after which the grid still reported it.
+Three defects were only visible in a capture, not in the DOM: module-scope Solid JSX made every shared icon
+render an empty svg, the new splitters shifted the grid so the transcript sat in a 6px column, and the chevrons
+pointed the wrong way. Informational agent notices now fade in the status line instead of stacking in the
+transcript.
