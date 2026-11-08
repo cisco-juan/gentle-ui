@@ -122,6 +122,7 @@ test("the shipped bindings cover every command the shell advertises", () => {
 			["palette", "Mod+K"],
 			["quick-open", "Mod+P"],
 			["rail", "Mod+B"],
+			["inspector", "Mod+Alt+B"],
 			["shortcuts", "Mod+Shift+K"],
 			["settings", "Mod+,"],
 			["send", "Mod+Enter"],
@@ -133,6 +134,8 @@ test("the shipped bindings cover every command the shell advertises", () => {
 	assert.equal(resolve(keydown("k", { meta: true }))?.id, "palette");
 	assert.equal(resolve(keydown("p", { meta: true }))?.id, "quick-open");
 	assert.equal(resolve(keydown("b", { meta: true }))?.id, "rail");
+	// The rail chord must not swallow the inspector chord: exact modifiers decide, not prefixes.
+	assert.equal(resolve(keydown("b", { meta: true, alt: true }))?.id, "inspector");
 	assert.equal(resolve(keydown("k", { meta: true, shift: true }))?.id, "shortcuts");
 	assert.equal(resolve(keydown(",", { meta: true }))?.id, "settings");
 	assert.equal(resolve(keydown("Enter", { meta: true }))?.id, "send");
