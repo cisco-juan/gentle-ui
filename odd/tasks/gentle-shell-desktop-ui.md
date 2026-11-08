@@ -5,7 +5,7 @@ pinned npm dependencies (`@earendil-works/pi-coding-agent`, `gentle-pi`), never 
 releases flow in as version bumps. The UI is a Tauri v2 shell (system webview) around a Vite frontend,
 with a Node bridge that drives the `pi` agent process.
 
-Status: every task is done except T9 phase two and T10 (packaging). Bridge speaks to `pi --mode rpc` over a
+Status: every task is done except T9 phase two. Bridge speaks to `pi --mode rpc` over a
 tokenised loopback WebSocket and re-answers extension dialogs; 216 bridge and 163 desktop tests green, and native
 assess of `e6eeb76..HEAD` reads medium and under budget, so no review is due. See `docs/architecture.md`.
 
@@ -106,7 +106,19 @@ T8  [x] File drag and drop, clipboard image paste, copy path (upload fallback in
 T9  [ ] Native review (RDD) panel: candidate, lenses, verdict, acknowledgement. S1
     Phase one done — cd987b1 — mode, authority, frozen budget, target, risk assessment, the consent card and
     start. Lens captures, verdicts and acknowledgement are phase two.
-T10 [ ] Packaging: node sidecar, per-OS artifacts via CI matrix, dependency bump workflow. S2 S6
+T10 [x] Packaging: node sidecar, per-OS artifacts via CI matrix, dependency bump workflow. S2 S6
+    The pipeline had never been run; three real runs later it produces artifacts on all three platforms
+    (run 42535375693, commit 1527cc8): `<name>-0.1.0-1.x86_64.rpm` 74.5 MB,
+    `<name>_0.1.0_amd64.AppImage` 148.5 MB, `<name>_0.1.0_amd64.deb` 74.1 MB,
+    `<name>_0.1.0_aarch64.dmg` 65.8 MB, `<name>_aarch64.app.tar.gz` 64.8 MB,
+    `<name>_0.1.0_x64_en-US.msi` 66.7 MB and `<name>_0.1.0_x64-setup.exe` 37.7 MB, all in the **draft**
+    release `v0.1.0` — nothing is published until a person says so.
+    Four defects came out of actually running it: tauri-action's `npm run tauri` ran from the repo root
+    where the app's binaries are not on PATH (`vite: not found`); `macos-14` is no longer a supported
+    runner label; the sidecar assumed a Windows archive has a `bin/` directory; and pnpm's isolated
+    node_modules is a symlink forest Tauri cannot copy (see 1527cc8, with tests and docs in both
+    languages). Route: inline plus one writer for the script. Risk: item 5 (delivery) — which is why it
+    was proven by running it, not by reading the workflow.
 T11 [x] A slash command never leaves the shell on "working": a handled prompt ends the run, Esc always leaves it,
     `prompt` is not timed out in the bridge, `extension_error` is shown, each record is sent once. S9 — 3306652
     Route: inline. Risk item 4. Native assess of this commit alone was not run: the CLI assesses `base..HEAD`,
@@ -388,6 +400,14 @@ T28 [x] A thread opens showing the oldest row of its first page for a moment bef
 Observation while closing T20: `profiles.json` holds a profile literally named `NaN`, next to `current`,
 `Claude-Grok`, `OnlyGrok` and `grok-opencode`. The UI renders it faithfully, so it is data, not a display bug — most
 likely created by an earlier session from a numeric parse. Left untouched: deleting a profile is the user's call.
+
+L16. 2026-11-08. Publishing and packaging. The repository is public at github.com/cisco-juan/gentle-ui,
+default branch `main`, with `develop` pushed alongside it, MIT license, and README plus docs mirrored in
+English and Spanish. Machine-local paths in these notes and one test fixture were redacted before the first
+push, and the check for them is part of the delivery: zero `/home/<user>`, zero mail addresses.
+The artifact name the pipeline writes is `<productName>` from `tauri.conf.json`, which still says
+"Gentle Shell", so the releases are named `Gentle.Shell_...` while the repository is `gentle-ui`. Left as is
+for now because renaming the product changes the bundle identifiers and the installer names; the user decides.
 
 L15. 2026-11-08. Integration, as the user asked ("ve pasando todo a develop"): `develop` was created from
 `feat/desktop-ui` (the settings-editor work, 8 commits) and `feat/desktop-transcript` was merged into it. Seven
