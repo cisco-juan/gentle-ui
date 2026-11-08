@@ -6,11 +6,11 @@ import { Palette, type PaletteGroup } from "./components/Palette";
 import { SettingsSheet, ShortcutsSheet } from "./components/Sheets";
 import { Sidebar } from "./components/Sidebar";
 import { StatusBar } from "./components/StatusBar";
+import { DEV_BRIDGE_URL, resolveBridgeUrl } from "./lib/bridge-endpoint";
 import { BINDINGS, createKeymap, isMac, type KeyEventLike } from "./lib/keybindings";
 import { folderLabel, relativeTime } from "./lib/threads";
 import { createChatController } from "./state/chat";
 
-const BRIDGE_URL = import.meta.env.VITE_BRIDGE_URL ?? "ws://127.0.0.1:7787/?token=dev";
 const PROJECT_LABEL = import.meta.env.VITE_PROJECT_LABEL ?? "";
 const MAC = isMac(`${navigator.userAgent} ${navigator.platform}`);
 
@@ -18,14 +18,33 @@ type Sheet = "settings" | "shortcuts" | null;
 type PaletteMode = "everything" | "threads" | null;
 
 export default function App() {
-	const chat = createChatController({ url: BRIDGE_URL, cwd: "" });
+	/**
+	 * The controller reads its endpoint lazily (`connect` and the upload path look at `options.url` each
+	 * time), so it can be created before the packaged app knows its bridge port. `resolveBridgeUrl()`
+	 * writes the answer here and only then connects; the seed is the development URL, which is all a
+	 * browser session ever needs.
+	 */
+	const endpoint = { url: DEV_BRIDGE_URL, cwd: "" };
+	const chat = createChatController(endpoint);
+	const [bridgeFailure, setBridgeFailure] = createSignal<string | null>(null);
 	const [sheet, setSheet] = createSignal<Sheet>(null);
 	const [palette, setPalette] = createSignal<PaletteMode>(null);
 	const [railOpen, setRailOpen] = createSignal(true);
 	const [inspectorOpen, setInspectorOpen] = createSignal(true);
 
 	onMount(() => {
-		void chat.connect();
+		void (async () => {
+			// The connection state stays "connecting" while this runs, which is exactly what the user
+			// should see: nothing is connected yet.
+			try {
+				endpoint.url = await resolveBridgeUrl();
+			} catch (error) {
+				// Only a packaged build rejects here, and its message says what is wrong with the bundle.
+				setBridgeFailure(error instanceof Error ? error.message : String(error));
+				return;
+			}
+			await chat.connect();
+		})();
 	});
 
 	const groups = createMemo<PaletteGroup[]>(() => {
@@ -205,6 +224,30 @@ export default function App() {
 			</Show>
 			<Show when={sheet() === "shortcuts"}>
 				<ShortcutsSheet onClose={() => setSheet(null)} />
+			</Show>
+
+			<Show when={bridgeFailure()}>
+				{(message) => (
+					// A packaged app whose bridge is missing or dead cannot connect at all, so the reason has
+					// to be visible: no port, no token, no chat. The styling is inline only because
+					// `styles.css` is outside this change; the colours come from the existing
+					// `.notice.error` rule.
+					<div
+						role="alert"
+						class="notice error"
+						style={{
+							position: "fixed",
+							"z-index": "12",
+							top: "12px",
+							left: "50%",
+							transform: "translateX(-50%)",
+							"max-width": "min(560px, calc(100vw - 40px))",
+							"box-shadow": "0 8px 28px rgb(0 0 0 / 0.4)",
+						}}
+					>
+						the bridge did not start: {message()}
+					</div>
+				)}
 			</Show>
 		</div>
 	);

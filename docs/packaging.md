@@ -25,15 +25,15 @@ bundle because users do not have Node or Pi installed.
 | `docs/packaging.md` (this file) | done |
 | CI: install, `pnpm -r typecheck`, `pnpm test` on `ubuntu-latest` | done |
 | Release: tag `v*` + dispatch, matrix over three OSes, Tauri action | done |
-| Rust spawns the bridge and forwards the handshake | **pending.** Specified below; the Rust side is not written yet, so the bundle ships unused |
+| Rust spawns the bridge and answers its handshake | done: `src-tauri/src/bridge_process.rs`, see [What the Rust side spawns](#what-the-rust-side-spawns) |
 | `pnpm package:sidecar` (produces `src-tauri/bridge/`) | done: `scripts/package-sidecar.mjs`, wired into `beforeBuildCommand` |
 | `bundle.externalBin` | deliberately absent, see [Why no `externalBin`](#why-no-externalbin) |
-| Frontend reads the production port/token | **pending**, it is app source (`apps/desktop/src`), see [The handshake](#the-handshake) |
+| Frontend reads the production port/token | done: `apps/desktop/src/lib/bridge-endpoint.ts`, see [The handshake](#the-handshake) |
 
-Today a `tauri build` populates `src-tauri/bridge/` (via `beforeBuildCommand`) and packs it into the
-bundle, but nothing consumes it: the webview still looks for `ws://127.0.0.1:7787/?token=dev`, i.e. the
-development bridge, until the two remaining rows land. A release build therefore needs network access
-(the Node runtime download) and a host in the supported platform matrix.
+A `tauri build` populates `src-tauri/bridge/` (via `beforeBuildCommand`), packs it into the bundle, and
+the packaged app now consumes it: Rust starts the bundled Node, reads the port and token the bridge
+prints, and the webview asks for them before its first connection. What that still cannot prove on a
+developer machine is listed under [What stays unproven](#what-stays-unproven).
 
 ## Identity
 
@@ -196,79 +196,85 @@ build on every platform — worse than the documented gap. It becomes the right 
 single-file bundle (option 2 above) exists; the script must then emit the platform-suffixed names
 above, and the runtime lookup moves from `$RESOURCE/bridge/node` to the sidecar helper.
 
-## What the Rust side must spawn
+## What the Rust side spawns
 
-`apps/desktop/src-tauri/src/lib.rs` grows a bridge module. Contract:
+Implemented in `apps/desktop/src-tauri/src/bridge_process.rs`, wired into `src/lib.rs`. The contract it
+keeps:
 
 - **Disabled in development.** `scripts/dev.mjs` already owns bridge lifecycle on port 7787; a release
-  binary must not spawn a second one. Gate on `cfg!(debug_assertions)` (`tauri dev` runs debug).
+  binary must not spawn a second one. It gates on `cfg!(debug_assertions)` (`tauri dev` runs debug) and
+  logs one line instead of spawning.
 - **Resolve through the resource directory**, never a relative path: `app.path().resource_dir()` gives
   the platform-specific location of `bridge/` (`Contents/Resources` inside the `.app`, next to the
-  executable on Linux and Windows).
+  executable on Linux and Windows). A missing `bridge/node(.exe)` or `bridge/app/dist/main.js` is
+  reported as a failure, not retried forever.
 - **Spawn** `$RESOURCE/bridge/node(.exe)` with `$RESOURCE/bridge/app/dist/main.js`, port `0` so the OS
-  picks a free port. Do **not** pass a token: the bridge generates a random one and prints it.
-- **Read one handshake line** from the child's stdout (`{"event":"ready","port":…,"token":…}`) and
-  forward it to the webview. Everything after that line is the child's own logging, which belongs in
-  the app's log, not in the webview.
-- **Own the lifetime**: keep the `Child` in managed state, kill it on `RunEvent::Exit` and on window
-  close, so quitting the app never leaves an orphan holding the agent session.
+  picks a free port. No token is passed: the bridge generates a random one and prints it. The child runs
+  on a background thread so a slow Node start never freezes the window.
+- **Read one handshake line** from the child's stdout (`{"event":"ready","port":…,"token":…}`), bounded
+  by a 10 s timeout that covers both the read and the wait for it. The reader thread keeps draining
+  stdout afterwards and logging it as `bridge: …`: closing the pipe under the child would turn its next
+  log line into `EPIPE` and kill it.
+- **Own the lifetime**: the `Child` lives in managed state, and both `WindowEvent::CloseRequested` and
+  `RunEvent::Exit` terminate it, so quitting the app never leaves an orphan holding the agent session.
+  A bridge whose handshake failed is killed immediately; a bridge that reported a port and then exited is
+  reported to the UI as an error rather than as a usable endpoint.
 
-The shape, using only crates already in `Cargo.toml` (`std::process`, `serde`, `serde_json`):
-
-```rust
-#[derive(Clone, serde::Serialize)]
-struct BridgeReady {
-    port: u16,
-    token: String,
-}
-
-fn spawn_bridge(app: &tauri::AppHandle) -> tauri::Result<std::process::Child> {
-    let dir = app.path().resource_dir()?.join("bridge");
-    let node = dir.join(if cfg!(windows) { "node.exe" } else { "node" });
-    let entry = dir.join("app").join("dist").join("main.js");
-    let mut child = std::process::Command::new(node)
-        .arg(entry)
-        .args(["--port", "0"])
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::inherit())
-        .spawn()?;
-    // then: read the first stdout line with BufReader, parse it with serde_json, emit
-    // "bridge://ready" through `Emitter`, and store the child for shutdown.
-    let _ = &mut child;
-    Ok(child)
-}
-```
-
-Those calls (`Manager::path`, `Emitter::emit`, background thread or `tauri::async_runtime::spawn`)
-belong in the module that implements this, not in this document.
+The module uses only `std::process`, `serde` and `serde_json`: one spawn does not justify
+`tauri-plugin-shell` plus its capability entries.
 
 ## The handshake
 
-The bridge already prints exactly one line on stdout once it is listening
-(`packages/bridge/src/main.ts`):
+The bridge prints exactly one line on stdout once it is listening (`packages/bridge/src/main.ts`):
 
 ```json
 {"event":"ready","port":47831,"token":"…"}
 ```
 
-That line is the contract between the two halves, and Rust has two ways to hand it to the UI:
+That line is the contract between the two halves. Rust keeps the parsed result and exposes it as a
+single Tauri command:
 
-1. **Event (preferred).** Rust emits `bridge://ready` with `{ port, token }`; the frontend listens with
-   `@tauri-apps/api/event` and builds `ws://127.0.0.1:<port>/?token=<token>`. `core:default` in
-   `capabilities/default.json` already allows `listen`, so no capability change is needed.
-2. **Init script.** Rust calls `webview.eval()` (or `WebviewWindowBuilder::initialization_script`)
-   with `window.__GENTLE_BRIDGE__ = { port, token }` before the app boots. Works without any event
-   plumbing, but couples the frontend to a global instead of a typed event.
-
-Either way the frontend change is small and lives in app source: today `apps/desktop/src/App.tsx` has
-
-```ts
-const BRIDGE_URL = import.meta.env.VITE_BRIDGE_URL ?? "ws://127.0.0.1:7787/?token=dev";
+```rust
+#[tauri::command]
+pub fn bridge_endpoint(state: tauri::State<'_, BridgeState>) -> Result<BridgeEndpoint, String>
 ```
 
-so production needs a third branch — "no build-time URL, ask the host" — that awaits the event and then
-constructs the client. Until that branch exists, a release bundle cannot reach its own bridge; that is
-the pending row in [Status](#status), and it is deliberately not part of the packaging change.
+The command, not an event, because the frontend needs the answer exactly once, at startup, and needs
+it as a value it can await: `invoke("bridge_endpoint")` is a request/response, while an event would
+mean listening for something that may already have been emitted before the webview subscribed. It
+needs no capability entry either — app commands are not gated by `capabilities/`. When the wait
+times out, the bundle is missing, or the child has exited, the command answers `Err(message)` with a
+message written for the user; it never panics and never guesses a port.
+
+`apps/desktop/src/lib/bridge-endpoint.ts` owns the frontend side, with three sources in order:
+
+1. `VITE_BRIDGE_URL` when set — `scripts/dev.mjs` sets it, so a browser session keeps using the dev
+   bridge on 7787 with token `dev` and never asks Tauri anything;
+2. otherwise, inside the Tauri webview (`"__TAURI_INTERNALS__" in window`), `bridge_endpoint`;
+3. otherwise the dev default `ws://127.0.0.1:7787/?token=dev`.
+
+The Tauri API is imported dynamically, so a browser session loads none of it. A rejection from step 2
+is surfaced in the UI as the startup error it is; falling back to the dev port there would hide a
+broken bundle behind a connection timeout. `App.tsx` awaits the resolution before `connect()`, which
+leaves the UI on its existing `connecting` state while the packaged bridge starts.
+
+## What stays unproven
+
+The code paths are in place and `cargo check`, `pnpm -r typecheck` and the desktop test suite cover
+their logic, but nothing below ran on a real bundle, because producing one needs `tauri build` (Node
+runtime download, minutes of Rust compilation) and a GUI:
+
+- that `bundle.resources` really places `bridge/` where `resource_dir()` looks for it on each OS, and
+  that the copied `node` keeps its executable bit inside `.AppImage`, `.deb`, `.dmg` and `.msi`;
+- that the macOS app bundle starts Node at all under Gatekeeper/notarisation rules, and that Windows
+  Defender does not quarantine a bundled `node.exe`;
+- that a cold first launch finishes the handshake inside the 10 s timeout on slow hardware (the timeout
+  is the only bound; it was never measured against a real release binary);
+- that `CloseRequested` and `RunEvent::Exit` both fire before the OS reaps the window on each desktop,
+  so no `node` survives a quit;
+- the appearance of the startup failure banner in the packaged shell, which was reviewed as code only.
+
+Closing that list is one artefact per OS plus a launch, which is what the release workflow produces.
 
 ## CI
 
@@ -332,8 +338,10 @@ node --check scripts/package-sidecar.mjs
 pnpm --filter @gentle-shell/desktop package:sidecar -- --plan      # no network, resolves only
 pnpm -r typecheck
 pnpm test
+(cd apps/desktop/src-tauri && cargo check)                        # the spawn path must stay warning-free
 ```
 
 What only a real build can prove, and therefore stays unproven until CI runs: that the resources are
 copied into the bundle, that the sidecar starts under each OS's sandboxing rules, that the `.dmg` and
-`.msi` installers work, and that macOS notarisation passes once signing exists.
+`.msi` installers work, and that macOS notarisation passes once signing exists. The spawn and handshake
+side of that list is itemised under [What stays unproven](#what-stays-unproven).
