@@ -1,8 +1,5 @@
-import { constants, copyFileSync, existsSync, mkdirSync, readFileSync, realpathSync } from "node:fs";
-import { createRequire } from "node:module";
-import { homedir } from "node:os";
-import { dirname, join } from "node:path";
-import { pathToFileURL } from "node:url";
+import { constants, copyFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import type {
 	ProfileEffective,
 	ProfileMode,
@@ -13,7 +10,14 @@ import type {
 	ProfilesView,
 	ProfileView,
 } from "@gentle-shell/protocol";
-import { resolvePiEnvironment } from "./pi-environment.ts";
+import {
+	GentlePiLibraryError,
+	gentleHomes,
+	importModules,
+	requireFunctions,
+	resolveExtensionRoot,
+	type GentleOptions,
+} from "./gentle-pi-library.ts";
 
 /**
  * Agent-model profiles, read and written with gentle-pi's own library.
@@ -135,14 +139,7 @@ export interface ProfilesLibrary {
 	writeProfilesFileSync(path: string, file: ProfilesFile): void;
 }
 
-export interface ProfilesOptions {
-	/** gentle-pi package root. When given it is the only one tried; otherwise discovery decides. */
-	readonly extension?: string;
-	/** Folder holding `profiles.json`. Defaults to the one the bridge pins for Pi. */
-	readonly configHome?: string;
-	/** Pi's agent home, whose `settings.json` carries the orchestrator. Defaults to the pinned one. */
-	readonly agentHome?: string;
-	readonly home?: string;
+export interface ProfilesOptions extends GentleOptions {
 	/** Load the library some other way; a test points this at a stand-in. */
 	readonly loadLibrary?: (root: string) => Promise<unknown>;
 	readonly now?: () => Date;
@@ -167,90 +164,38 @@ const loaded = new Map<string, Promise<ProfilesLibrary>>();
 export function loadProfilesLibrary(root: string): Promise<ProfilesLibrary> {
 	const cached = loaded.get(root);
 	if (cached !== undefined) return cached;
-	const pending = importLibrary(root).then(checkLibrary);
+	const pending = importModules(root, ["agent-profiles", "profiles-orchestrator", "model-routing-authority", "agent-profile-pin"])
+		.then((modules) => requireFunctions<ProfilesLibrary>(modules, REQUIRED, "profile library"))
+		.catch((error: unknown) => {
+			throw translated(error);
+		});
 	// A failed load is not remembered: installing or fixing gentle-pi must not need a bridge restart.
 	pending.catch(() => loaded.delete(root));
 	loaded.set(root, pending);
 	return pending;
 }
 
-async function importLibrary(root: string): Promise<unknown> {
-	if (!existsSync(join(root, "lib", "agent-profiles.ts"))) {
-		throw new ProfilesError("library-missing", `gentle-pi's profile library was not found under ${root}.`);
-	}
-
-	let jitiPath: string;
-	try {
-		jitiPath = createRequire(join(piDirectory(root), "package.json")).resolve("jiti");
-	} catch (error) {
-		throw new ProfilesError(
-			"library-missing",
-			`jiti, which loads gentle-pi's TypeScript, could not be found next to Pi (${messageOf(error)}).`,
-		);
-	}
-
-	try {
-		const { createJiti } = (await import(pathToFileURL(jitiPath).href)) as {
-			createJiti(base: string, options: Record<string, unknown>): { import(path: string): Promise<unknown> };
-		};
-		const jiti = createJiti(pathToFileURL(join(root, "package.json")).href, { moduleCache: false });
-		const modules = await Promise.all(
-			["agent-profiles", "profiles-orchestrator", "model-routing-authority", "agent-profile-pin"].map((name) =>
-				jiti.import(join(root, "lib", `${name}.ts`)),
-			),
-		);
-		return Object.assign({}, ...modules);
-	} catch (error) {
-		throw new ProfilesError("library-incompatible", `gentle-pi's profile library could not be loaded (${messageOf(error)}).`);
-	}
-}
-
-/** Pi sits next to gentle-pi in the same `node_modules`, or inside it for a flat install. */
-function piDirectory(root: string): string {
-	const candidates = [
-		join(root, "node_modules", "@earendil-works", "pi-coding-agent"),
-		join(dirname(root), "@earendil-works", "pi-coding-agent"),
-	];
-	const found = candidates.find((candidate) => existsSync(candidate));
-	if (found === undefined) throw new Error("the Pi package is not installed beside gentle-pi");
-	return realpathSync(found);
-}
-
-function checkLibrary(candidate: unknown): ProfilesLibrary {
-	const record = (typeof candidate === "object" && candidate !== null ? candidate : {}) as Record<string, unknown>;
-	const missing = REQUIRED.filter((name) => typeof record[name] !== "function");
-	if (missing.length > 0) {
-		throw new ProfilesError("library-incompatible", `gentle-pi's profile library does not offer: ${missing.join(", ")}.`);
-	}
-	return record as unknown as ProfilesLibrary;
-}
-
 async function library(options: ProfilesOptions): Promise<ProfilesLibrary> {
-	if (options.loadLibrary !== undefined) return checkLibrary(await options.loadLibrary(options.extension ?? ""));
-
-	const root = options.extension ?? resolvePiEnvironment(options.home === undefined ? {} : { home: options.home }).extensionPath;
-	if (root === null || root === undefined || !existsSync(join(root, "package.json"))) {
-		throw new ProfilesError("library-missing", "gentle-pi is not installed, so its profiles cannot be read.");
+	try {
+		if (options.loadLibrary !== undefined) {
+			return requireFunctions<ProfilesLibrary>(await options.loadLibrary(options.extension ?? ""), REQUIRED, "profile library");
+		}
+		return await loadProfilesLibrary(resolveExtensionRoot(options));
+	} catch (error) {
+		throw translated(error);
 	}
-	return loadProfilesLibrary(root);
 }
 
-// ---- where things live ----
-
-function homes(options: ProfilesOptions): { configHome: string; agentHome: string } {
-	const home = options.home ?? homedir();
-	const env = resolvePiEnvironment({ home }).env;
-	return {
-		configHome: options.configHome ?? env["GENTLE_SHELL_CONFIG_HOME"] ?? join(home, ".gentle-shell", "gentle-ai"),
-		agentHome: options.agentHome ?? env["PI_CODING_AGENT_DIR"] ?? join(home, ".gentle-shell", "agent"),
-	};
+/** The shared loader names its failures its own way; the panel knows them as profiles failures. */
+function translated(error: unknown): unknown {
+	return error instanceof GentlePiLibraryError ? new ProfilesError(error.reason, error.message) : error;
 }
 
 // ---- reading ----
 
 /** Every profile with its routes, the active one, and what a new thread in `workspace` would start with. */
 export async function profilesList(workspace: string, options: ProfilesOptions = {}): Promise<ProfilesView> {
-	const { configHome } = homes(options);
+	const { configHome } = gentleHomes(options);
 	let lib: ProfilesLibrary;
 	try {
 		lib = await library(options);
@@ -458,7 +403,7 @@ export async function profilesActivate(
 	options: ProfilesOptions = {},
 ): Promise<ProfilesActivation> {
 	const lib = await library(options);
-	const { configHome, agentHome } = homes(options);
+	const { configHome, agentHome } = gentleHomes(options);
 	const path = lib.profilesFilePath(configHome);
 	const file = readForWrite(lib, path);
 	const next = lib.setActiveProfile(file, name);
@@ -493,7 +438,7 @@ async function mutate(
 	change: (lib: ProfilesLibrary, file: ProfilesFile) => ProfilesFile,
 ): Promise<ProfilesView> {
 	const lib = await library(options);
-	const { configHome } = homes(options);
+	const { configHome } = gentleHomes(options);
 	const path = lib.profilesFilePath(configHome);
 	const next = change(lib, readForWrite(lib, path));
 	commit(lib, path, configHome, options, next);
@@ -573,8 +518,4 @@ function keepBackup(path: string, configHome: string, options: ProfilesOptions):
 			if ((error as NodeJS.ErrnoException).code !== "EEXIST" || attempt >= 50) throw error;
 		}
 	}
-}
-
-function messageOf(error: unknown): string {
-	return error instanceof Error ? error.message : String(error);
 }

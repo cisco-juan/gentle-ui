@@ -430,6 +430,28 @@ export interface ProfilesActivation {
 	readonly pinnedTo: string | null;
 }
 
+/**
+ * The permission mode new threads start in, which gentle-pi keeps in a file of its own.
+ *
+ * The mode decides whether the agent asks before it acts, so what may be changed from here is narrower than
+ * what exists: `settable` lists the modes the bridge will write, and raising the default to `yolo` or
+ * `super-yolo` is not among them. Those are chosen in a terminal, by a person, and the bridge refuses them
+ * on the server rather than trusting the UI to hide them. A file gentle-pi cannot read is `unavailable`,
+ * never read as `normal`.
+ */
+export type PermissionMode = "normal" | "auto" | "yolo" | "super-yolo";
+
+export interface PermissionsView {
+	readonly state: ProfilesState;
+	readonly reason: ProfilesFailureReason | null;
+	readonly message: string;
+	/** The default for new threads, or null when it could not be read. */
+	readonly default: PermissionMode | null;
+	/** False while no preference has been saved and the built-in default applies. */
+	readonly stored: boolean;
+	readonly settable: readonly PermissionMode[];
+}
+
 export type ClientMessage =
 	| ({ readonly kind: "open"; readonly id: string } & OpenThreadRequest)
 	| { readonly kind: "close"; readonly threadId: string }
@@ -469,6 +491,9 @@ export type ClientMessage =
 			readonly limit?: number;
 	  }
 	| { readonly kind: "memory"; readonly id: string; readonly action: "projects" }
+	/** The default permission mode for new threads. Only a lowering is ever written from here. */
+	| { readonly kind: "permissions"; readonly id: string; readonly action: "status" }
+	| { readonly kind: "permissions"; readonly id: string; readonly action: "default"; readonly mode: string }
 	/** Profiles. Every mutation answers with the whole list as it now is on disk. */
 	| { readonly kind: "profiles"; readonly id: string; readonly action: "list" }
 	| {
@@ -529,6 +554,10 @@ export type ServerMessage =
 			readonly kind: "profiles";
 			readonly id: string;
 	  } & ProfilesResult)
+	| ({
+			readonly kind: "permissions";
+			readonly id: string;
+	  } & PermissionsResult)
 	| { readonly kind: "error"; readonly id?: string; readonly message: string };
 
 /** One memory answer, tagged with the action that asked for it. */
@@ -536,6 +565,9 @@ export type MemoryResult =
 	| { readonly action: "context"; readonly data: MemoryContextView }
 	| { readonly action: "search"; readonly data: MemorySearchView }
 	| { readonly action: "projects"; readonly data: MemoryProjectsView };
+
+/** One permissions answer. */
+export type PermissionsResult = { readonly action: "status" | "default"; readonly data: PermissionsView };
 
 /** One profiles answer, tagged with the action that asked for it. */
 export type ProfilesResult =

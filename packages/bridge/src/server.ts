@@ -1,10 +1,11 @@
 import { createServer } from "node:http";
 import { randomBytes } from "node:crypto";
 import { WebSocketServer, type WebSocket } from "ws";
-import type { ClientMessage, PiCommand, ProfilesResult, ServerMessage, SessionSummary } from "@gentle-shell/protocol";
+import type { ClientMessage, PermissionsResult, PiCommand, ProfilesResult, ServerMessage, SessionSummary } from "@gentle-shell/protocol";
 import { resolveCommand } from "./commands.ts";
 import { gitDiff, gitStatus } from "./git.ts";
 import { memoryContext, memoryProjects, memorySearch, type MemoryOptions } from "./memory.ts";
+import { permissionsSetDefault, permissionsStatus, type PermissionsOptions } from "./permissions.ts";
 import {
 	profilesActivate,
 	profilesCreate,
@@ -48,6 +49,8 @@ export interface BridgeServerOptions {
 	readonly memory?: MemoryOptions;
 	/** Where profiles live and which gentle-pi reads them; a test points this at a scratch config home. */
 	readonly profiles?: ProfilesOptions;
+	/** Where gentle-pi keeps the default permission mode; a test points this at a scratch config home. */
+	readonly permissions?: PermissionsOptions;
 }
 
 export interface BridgeServerHandle {
@@ -144,6 +147,17 @@ export async function startBridgeServer(options: BridgeServerOptions = {}): Prom
 		if (message.kind === "memory") {
 			try {
 				await dispatchMemory(socket, message);
+			} catch (error) {
+				send(socket, { kind: "error", id: message.id, message: errorMessage(error) });
+			}
+			return;
+		}
+
+		// The permission default belongs to the same configuration. What it may be set to is decided in
+		// permissions.ts, on this side of the wire: an elevated mode is refused whoever asks.
+		if (message.kind === "permissions") {
+			try {
+				await dispatchPermissions(socket, message);
 			} catch (error) {
 				send(socket, { kind: "error", id: message.id, message: errorMessage(error) });
 			}
@@ -350,6 +364,23 @@ export async function startBridgeServer(options: BridgeServerOptions = {}): Prom
 			action: "context",
 			data: await memoryContext(workspace, memoryOptions),
 		});
+	}
+
+	async function dispatchPermissions(
+		socket: WebSocket,
+		message: Extract<ClientMessage, { kind: "permissions" }>,
+	): Promise<void> {
+		const permissionOptions = options.permissions ?? {};
+		const reply = (answer: PermissionsResult): void => send(socket, { kind: "permissions", id: message.id, ...answer });
+
+		switch (message.action) {
+			case "status":
+				return reply({ action: "status", data: await permissionsStatus(permissionOptions) });
+			case "default":
+				return reply({ action: "default", data: await permissionsSetDefault(message.mode, permissionOptions) });
+			default:
+				throw new Error(`unsupported permissions action: ${String((message as { action?: unknown }).action)}`);
+		}
 	}
 
 	async function dispatchProfiles(
