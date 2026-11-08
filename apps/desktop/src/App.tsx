@@ -1,6 +1,7 @@
-import { onMount } from "solid-js";
+import { Show, createSignal, onMount } from "solid-js";
 import { ChatView } from "./components/ChatView";
 import { Composer } from "./components/Composer";
+import { SettingsSheet, ShortcutsSheet } from "./components/Sheets";
 import { Sidebar } from "./components/Sidebar";
 import { StatusBar } from "./components/StatusBar";
 import { createChatController } from "./state/chat";
@@ -10,10 +11,21 @@ const PROJECT_LABEL = import.meta.env.VITE_PROJECT_LABEL ?? "";
 
 export default function App() {
 	const chat = createChatController({ url: BRIDGE_URL, cwd: "" });
+	const [sheet, setSheet] = createSignal<"settings" | "shortcuts" | null>(null);
 
 	onMount(() => {
 		void chat.connect();
 	});
+
+	const facts = () => [
+		{ label: "workspace", value: PROJECT_LABEL || "current workspace" },
+		{ label: "model", value: chat.model() || "unknown" },
+		{ label: "profile", value: chat.profile() },
+		{ label: "permissions", value: chat.permissionMode() },
+		{ label: "commands", value: `${chat.commands().length} available` },
+		{ label: "threads", value: `${chat.threads().length} saved` },
+		{ label: "bridge", value: chat.connection() },
+	];
 
 	return (
 		<div class="app">
@@ -23,9 +35,10 @@ export default function App() {
 				statuses={chat.statuses()}
 				threads={chat.threads()}
 				activePath={chat.activePath()}
-				onSelectThread={(path) => void chat.switchThread(path)}
 				onNewThread={() => void chat.newThread()}
-				onInterrupt={() => void chat.interrupt()}
+				onSelectThread={(path) => void chat.switchThread(path)}
+				onOpenSettings={() => setSheet("settings")}
+				onOpenShortcuts={() => setSheet("shortcuts")}
 			/>
 
 			<main>
@@ -40,10 +53,24 @@ export default function App() {
 					onInterrupt={() => void chat.interrupt()}
 					running={chat.running}
 					model={chat.model}
+					profile={chat.profile}
+					permissionMode={chat.permissionMode}
 					commands={chat.commands}
+					models={chat.models}
+					onLoadModels={() => void chat.loadModels()}
+					onSwitchModel={(provider, id) => void chat.switchModel(provider, id)}
+					onRunCommand={(name) => void chat.runCommand(name)}
+					onPermissionMode={(mode) => void chat.setPermissionMode(mode)}
 				/>
 				<StatusBar model={chat.model} cost={chat.cost} running={chat.running} />
 			</main>
+
+			<Show when={sheet() === "settings"}>
+				<SettingsSheet facts={facts()} onClose={() => setSheet(null)} />
+			</Show>
+			<Show when={sheet() === "shortcuts"}>
+				<ShortcutsSheet onClose={() => setSheet(null)} />
+			</Show>
 		</div>
 	);
 }

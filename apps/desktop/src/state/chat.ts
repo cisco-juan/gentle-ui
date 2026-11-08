@@ -28,6 +28,9 @@ export interface ChatController {
 	readonly cost: Accessor<number>;
 	readonly statuses: Accessor<Record<string, string>>;
 	readonly commands: Accessor<Array<{ name: string; description: string }>>;
+	readonly models: Accessor<Array<{ provider: string; id: string; contextWindow?: number }>>;
+	readonly profile: Accessor<string>;
+	readonly permissionMode: Accessor<string>;
 	readonly threads: Accessor<readonly SessionSummary[]>;
 	/** Session file the open thread is showing, `null` for a thread with no file yet. */
 	readonly activePath: Accessor<string | null>;
@@ -38,6 +41,10 @@ export interface ChatController {
 	switchThread(path: string): Promise<void>;
 	refreshThreads(): Promise<void>;
 	answerPermission(requestId: string, response: ExtensionUiResponse): void;
+	loadModels(): Promise<void>;
+	switchModel(provider: string, modelId: string): Promise<void>;
+	runCommand(name: string): Promise<void>;
+	setPermissionMode(mode: string): Promise<void>;
 }
 
 /** Translate Pi's record stream into renderable chat items. */
@@ -50,6 +57,9 @@ export function createChatController(options: { url: string; cwd: string }): Cha
 	const [cost, setCost] = createSignal(0);
 	const [statuses, setStatuses] = createSignal<Record<string, string>>({});
 	const [commands, setCommands] = createSignal<Array<{ name: string; description: string }>>([]);
+	const [models, setModels] = createSignal<Array<{ provider: string; id: string; contextWindow?: number }>>([]);
+	const [profile] = createSignal("default");
+	const [permissionMode, setPermissionModeSignal] = createSignal("normal");
 	const [threads, setThreads] = createSignal<readonly SessionSummary[]>([]);
 	const [activePath, setActivePath] = createSignal<string | null>(null);
 
@@ -232,7 +242,7 @@ export function createChatController(options: { url: string; cwd: string }): Cha
 				threadId as string,
 				"get_commands",
 			);
-			setCommands(listed.commands ?? []);
+			applyCommands(listed.commands ?? []);
 		} catch {
 			// A missing command list is not fatal: the composer still sends plain prompts.
 		}
@@ -374,6 +384,47 @@ export function createChatController(options: { url: string; cwd: string }): Cha
 		);
 	}
 
+	function errorText(error: unknown): string {
+		return error instanceof Error ? error.message : String(error);
+	}
+
+	function applyCommands(list: Array<{ name: string; description: string }>): void {
+		setCommands(list);
+	}
+
+	async function loadModels(): Promise<void> {
+		if (!client || !threadId) return;
+		try {
+			const listed = await client.command<
+				Array<{ provider: string; id: string; contextWindow?: number }> | { models?: Array<{ provider: string; id: string }> }
+			>(threadId, "get_available_models");
+			setModels(Array.isArray(listed) ? listed : (listed.models ?? []));
+		} catch (error) {
+			append({ kind: "notice", id: nextId(), text: errorText(error), tone: "error" });
+		}
+	}
+
+	async function switchModel(provider: string, modelId: string): Promise<void> {
+		if (!client || !threadId) return;
+		try {
+			await client.command(threadId, "set_model", { provider, model: modelId });
+			setModel(modelId);
+		} catch (error) {
+			append({ kind: "notice", id: nextId(), text: errorText(error), tone: "error" });
+		}
+	}
+
+	/** Slash commands are plain prompts to Pi, so the UI needs no private control channel for them. */
+	async function runCommand(name: string): Promise<void> {
+		await send(`/${name}`);
+	}
+
+	async function setPermissionMode(mode: string): Promise<void> {
+		setPermissionModeSignal(mode);
+		const command = commands().find((entry) => entry.name.includes("permission"));
+		if (command) await runCommand(command.name);
+	}
+
 	return {
 		items,
 		draft,
@@ -383,6 +434,9 @@ export function createChatController(options: { url: string; cwd: string }): Cha
 		cost,
 		statuses,
 		commands,
+		models,
+		profile,
+		permissionMode,
 		threads,
 		activePath,
 		connect,
@@ -392,6 +446,10 @@ export function createChatController(options: { url: string; cwd: string }): Cha
 		switchThread,
 		refreshThreads,
 		answerPermission,
+		loadModels,
+		switchModel,
+		runCommand,
+		setPermissionMode,
 	};
 }
 

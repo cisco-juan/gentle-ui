@@ -1,6 +1,7 @@
 import { For, Match, Show, Switch, createEffect, type Accessor } from "solid-js";
 import type { ExtensionUiResponse } from "@gentle-shell/protocol";
 import type { ChatItem } from "../state/chat";
+import { RichText } from "./RichText";
 import { PermissionCard } from "./PermissionCard";
 import { ToolCard } from "./ToolCard";
 
@@ -43,7 +44,7 @@ export function ChatView(props: {
 						<span class="who">agent</span>
 						<span class="cursor" />
 					</header>
-					<p>{props.draft()}</p>
+					<RichText text={props.draft()} />
 				</article>
 			</Show>
 
@@ -68,7 +69,7 @@ function Row(props: { item: ChatItem; onAnswer: (requestId: string, response: Ex
 						<header>
 							<span class="who">you</span>
 						</header>
-						<p>{user().text}</p>
+						<p class="raw">{user().text}</p>
 					</article>
 				)}
 			</Match>
@@ -85,7 +86,7 @@ function Row(props: { item: ChatItem; onAnswer: (requestId: string, response: Ex
 								<span class="tag cost">${assistant().cost?.toFixed(4)}</span>
 							</Show>
 						</header>
-						<p>{assistant().text}</p>
+						<RichText text={assistant().text} />
 					</article>
 				)}
 			</Match>

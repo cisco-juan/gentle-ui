@@ -20,7 +20,7 @@ export function ToolCard(props: { tool: ToolItem }) {
 	return (
 		<div class={`tool ${props.tool.status}`}>
 			<button class="tool-head" onClick={() => setOpen((current) => !current)}>
-				<span class="chevron">{open() ? "▾" : "▸"}</span>
+				<span class="chevron-static">{open() ? "▾" : "▸"}</span>
 				<span class="tool-name">{props.tool.name}</span>
 				<span class="tool-summary">{summary()}</span>
 				<span class="tool-state">

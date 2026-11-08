@@ -1,34 +1,76 @@
-import { For, Show, createSignal, type Accessor } from "solid-js";
+import { For, Show, createMemo, createSignal } from "solid-js";
+import { Icon } from "./Icon";
 
-/** Composer: the only place a prompt starts. Enter sends, Shift+Enter breaks the line, Esc interrupts. */
+type Menu = "model" | "profile" | "permissions" | null;
+
+/**
+ * Composer.
+ *
+ * Everything that changes how the next message runs lives here as a clickable chip — model, profile,
+ * permission mode — because a modal for a setting you change mid-thought breaks the thread.
+ */
 export function Composer(props: {
 	onSend: (text: string) => void;
 	onInterrupt: () => void;
-	running: Accessor<boolean>;
-	model: Accessor<string>;
-	commands: Accessor<Array<{ name: string; description: string }>>;
+	running: () => boolean;
+	model: () => string;
+	profile: () => string;
+	permissionMode: () => string;
+	commands: () => ReadonlyArray<{ name: string; description: string }>;
+	models: () => ReadonlyArray<{ provider: string; id: string }>;
+	onLoadModels: () => void;
+	onSwitchModel: (provider: string, id: string) => void;
+	onRunCommand: (name: string) => void;
+	onPermissionMode: (mode: string) => void;
 }) {
 	const [text, setText] = createSignal("");
-	const [showCommands, setShowCommands] = createSignal(false);
+	const [menu, setMenu] = createSignal<Menu>(null);
+	const [query, setQuery] = createSignal("");
 
-	const suggestions = () => {
-		const query = text();
-		if (!query.startsWith("/")) return [];
-		const needle = query.slice(1).toLowerCase();
-		return props.commands().filter((command) => command.name.toLowerCase().includes(needle)).slice(0, 8);
-	};
+	const suggestions = createMemo(() => {
+		const value = text();
+		if (!value.startsWith("/")) return [];
+		const needle = value.slice(1).toLowerCase();
+		const all = props.commands();
+		// Prefix matches first: typing "/" must not bury the built-in commands behind skill noise.
+		const ranked = all
+			.filter((command) => command.name.toLowerCase().includes(needle))
+			.sort((left, right) => {
+				const leftPrefix = left.name.toLowerCase().startsWith(needle) ? 0 : 1;
+				const rightPrefix = right.name.toLowerCase().startsWith(needle) ? 0 : 1;
+				return leftPrefix - rightPrefix || left.name.localeCompare(right.name);
+			});
+		return ranked.slice(0, 12);
+	});
+
+	const filteredModels = createMemo(() => {
+		const needle = query().trim().toLowerCase();
+		const all = props.models();
+		return needle.length === 0 ? all : all.filter((entry) => `${entry.provider}/${entry.id}`.toLowerCase().includes(needle));
+	});
+
+	const commandsMatching = (needle: string) => props.commands().filter((command) => command.name.toLowerCase().includes(needle));
 
 	function submit(): void {
 		const message = text().trim();
 		if (message.length === 0) return;
 		setText("");
-		setShowCommands(false);
 		props.onSend(message);
+	}
+
+	function toggleMenu(next: Exclude<Menu, null>): void {
+		setMenu((current) => (current === next ? null : next));
+		setQuery("");
+		if (next === "model" && props.models().length === 0) props.onLoadModels();
 	}
 
 	return (
 		<div class="composer">
-			<Show when={suggestions().length > 0 && showCommands()}>
+			<Show when={menu() !== null}>
+				<div class="menu-backdrop" onClick={() => setMenu(null)} />
+			</Show>
+
+			<Show when={suggestions().length > 0}>
 				<ul class="suggestions">
 					<For each={suggestions()}>
 						{(command) => (
@@ -50,14 +92,12 @@ export function Composer(props: {
 				value={text()}
 				placeholder={props.running() ? "agent is working — Esc to interrupt" : "Ask for something…  / for commands"}
 				rows={3}
-				onInput={(event) => {
-					setText(event.currentTarget.value);
-					setShowCommands(event.currentTarget.value.startsWith("/"));
-				}}
+				onInput={(event) => setText(event.currentTarget.value)}
 				onKeyDown={(event) => {
 					if (event.key === "Escape") {
 						event.preventDefault();
-						props.onInterrupt();
+						if (menu() !== null) setMenu(null);
+						else props.onInterrupt();
 						return;
 					}
 					if (event.key === "Enter" && !event.shiftKey) {
@@ -69,10 +109,95 @@ export function Composer(props: {
 
 			<footer>
 				<div class="chips">
-					<span class="chip model">{props.model() || "no model"}</span>
-					<span class="chip muted-chip">profile: default</span>
-					<span class="chip muted-chip">permissions: normal</span>
+					<div class="chip-wrap">
+						<button class="chip model" classList={{ open: menu() === "model" }} onClick={() => toggleMenu("model")}>
+							{props.model() || "no model"}
+							<Icon name="caret" size={11} />
+						</button>
+						<Show when={menu() === "model"}>
+							<div class="popover">
+								<input
+									class="popover-search"
+									placeholder="Filter models…"
+									value={query()}
+									onInput={(event) => setQuery(event.currentTarget.value)}
+								/>
+								<ul>
+									<For each={filteredModels()}>
+										{(entry) => (
+											<li>
+												<button
+													onClick={() => {
+														props.onSwitchModel(entry.provider, entry.id);
+														setMenu(null);
+													}}
+												>
+													<span class="mono">{entry.id}</span>
+													<span class="muted">{entry.provider}</span>
+												</button>
+											</li>
+										)}
+									</For>
+								</ul>
+								<Show when={filteredModels().length === 0}>
+									<p class="popover-empty">No models reported by the agent.</p>
+								</Show>
+							</div>
+						</Show>
+					</div>
+
+					<div class="chip-wrap">
+						<button class="chip" classList={{ open: menu() === "profile" }} onClick={() => toggleMenu("profile")}>
+							profile: {props.profile()}
+							<Icon name="caret" size={11} />
+						</button>
+						<Show when={menu() === "profile"}>
+							<div class="popover">
+								<For each={commandsMatching("profile")} fallback={<p class="popover-empty">This agent exposes no profile command.</p>}>
+									{(command) => (
+										<button
+											class="popover-row"
+											onClick={() => {
+												props.onRunCommand(command.name);
+												setMenu(null);
+											}}
+										>
+											<span class="mono">/{command.name}</span>
+											<span class="muted">{command.description}</span>
+										</button>
+									)}
+								</For>
+							</div>
+						</Show>
+					</div>
+
+					<div class="chip-wrap">
+						<button class="chip" classList={{ open: menu() === "permissions" }} onClick={() => toggleMenu("permissions")}>
+							permissions: {props.permissionMode()}
+							<Icon name="caret" size={11} />
+						</button>
+						<Show when={menu() === "permissions"}>
+							<div class="popover">
+								<For each={["normal", "auto", "yolo"]}>
+									{(mode) => (
+										<button
+											class="popover-row"
+											classList={{ current: props.permissionMode() === mode }}
+											onClick={() => {
+												props.onPermissionMode(mode);
+												setMenu(null);
+											}}
+										>
+											<span class="mono">{mode}</span>
+										</button>
+									)}
+								</For>
+								<p class="popover-note">Switches the agent's permission mode for this thread.</p>
+							</div>
+						</Show>
+					</div>
 				</div>
+
 				<div class="actions">
 					<Show when={props.running()}>
 						<button class="ghost" onClick={() => props.onInterrupt()}>
