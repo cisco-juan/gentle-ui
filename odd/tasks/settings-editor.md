@@ -36,8 +36,9 @@ Restricciones derivadas (no son frases del usuario; hacen cumplir S5 sobre el c�
 | T4 | bridge: escritor de MCP (alta/baja/edición, stdio y http) con validación y redacción | S3, S5 | worker | pending |
 | T5 | bridge: escritor de claves acotadas de `settings.json` con valores tipados | S4, S5 | worker | pending |
 | T6 | desktop: chip de permisos cableado al cliente real, estado compartido con el sheet | S6 | worker | pending |
-| T7 | desktop: Settings editable (paquetes, skills, MCP, claves) con skeletons y confirmaciones | S1, S2, S3, S4 | worker | pending |
+| T7 | desktop: sheet editable — estructura con skeletons, modelo/perfil/modo y claves de `settings.json`, con confirmación por plan | S1, S2, S4, S6 | worker | pending |
 | T8 | docs: `docs/architecture.md` y la leyenda del sheet dejan de decir que no se edita | S1, S2 | inline | pending |
+| T9 | desktop: paquetes, skills y MCP en el sheet, con confirmación y el aviso de que un paquete se instala al arrancar el agente | S2, S3 | worker | pending |
 
 ## Log
 
