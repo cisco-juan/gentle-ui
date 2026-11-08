@@ -1,0 +1,113 @@
+name: Release
+
+# Cut a release by pushing a tag:
+#   git tag v0.1.0 && git push origin v0.1.0
+# A manual run publishes the tag named in the "tag" input (default v0.1.0), so dispatch has an
+# upload target as well.
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to publish (for example v0.1.0)"
+        required: false
+        default: "v0.1.0"
+
+concurrency:
+  group: release-${{ github.event.inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  bundle:
+    name: Bundle (${{ matrix.label }})
+    runs-on: ${{ matrix.platform }}
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Rust is never cross-compiled: every artefact comes from its own runner.
+          #   ubuntu-latest -> .AppImage and .deb
+          #   macos-14      -> .dmg (arm64)
+          #   windows-latest-> .msi
+          # Add more entries (for example a macos x86_64 runner or a universal target) by extending
+          # this matrix, not by adding cross-compilation flags.
+          - label: linux
+            platform: ubuntu-latest
+            args: ""
+          - label: macos
+            platform: macos-14
+            args: ""
+          - label: windows
+            platform: windows-latest
+            args: ""
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Tauri's Linux requirements. libappindicator now ships as the Ayatana fork on current Ubuntu
+      # runners, hence libayatana-appindicator3-dev rather than libappindicator3-dev.
+      - name: Install Linux system dependencies
+        if: matrix.platform == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            build-essential \
+            libssl-dev
+
+      # Version comes from "packageManager" in the root package.json.
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 12.4.1
+
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "apps/desktop/src-tauri -> target"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Code signing is not configured. Enabling it requires these repository secrets, named the way
+      # the Tauri toolchain reads them upstream. None of them exist in this repository today, and the
+      # workflow builds unsigned artefacts until they do:
+      #
+      #   macOS certificates and notarisation:
+      #     APPLE_CERTIFICATE, APPLE_CERTIFICATE_PASSWORD, APPLE_SIGNING_IDENTITY,
+      #     APPLE_ID, APPLE_PASSWORD, APPLE_TEAM_ID
+      #   Tauri updater / installer signature:
+      #     TAURI_SIGNING_PRIVATE_KEY, TAURI_SIGNING_PRIVATE_KEY_PASSWORD
+      #   Windows code signing needs a certificate that this repository does not have; configure
+      #     bundle.windows.certificateThumbprint (or a signing command) in tauri.conf.json at the
+      #     same time as the certificate, not before.
+      - name: Build and publish the bundle
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: apps/desktop
+          tagName: ${{ github.event.inputs.tag || github.ref_name }}
+          releaseName: "Gentle Shell ${{ github.event.inputs.tag || github.ref_name }}"
+          releaseBody: "Desktop bundles for Linux, macOS and Windows. See docs/packaging.md."
+          # Draft first: a maintainer checks the artefacts, then publishes.
+          releaseDraft: true
+          prerelease: false
+          args: ${{ matrix.args }}

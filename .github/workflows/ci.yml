@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches: [main, feat/desktop-ui]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: Typecheck and test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Version comes from "packageManager" in the root package.json.
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 12.4.1
+
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck every package
+        run: pnpm -r typecheck
+
+      # `pnpm test` is `pnpm -r test`: both apps/desktop and packages/bridge.
+      #
+      # NOTE: the bridge suite starts a real `pi --mode rpc` child and loads the gentle-pi harness
+      # (see docs/architecture.md, "Starting the agent correctly"). A clean runner that does not
+      # have that binary installed fails those tests; provisioning the harness here is a separate
+      # decision and is not part of this workflow yet.
+      - name: Test every package
+        run: pnpm test

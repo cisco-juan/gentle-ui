@@ -9,6 +9,7 @@
     "serve": "vite preview",
     "test": "node --experimental-strip-types --test src/lib/*.test.ts",
     "typecheck": "tsc --noEmit",
+    "package:sidecar": "node ../../scripts/package-sidecar.mjs",
     "tauri": "tauri"
   },
   "license": "MIT",

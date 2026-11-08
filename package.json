@@ -12,7 +12,7 @@
     "dev:web": "pnpm --filter @gentle-shell/desktop dev",
     "dev:bridge": "node --experimental-strip-types packages/bridge/src/main.ts --port 7787 --token dev",
     "dev:desktop": "pnpm --filter @gentle-shell/desktop tauri dev",
-    "test": "pnpm --filter @gentle-shell/bridge test",
+    "test": "pnpm -r test",
     "typecheck": "pnpm -r typecheck"
   }
 }

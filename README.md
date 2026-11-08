@@ -28,7 +28,7 @@ pnpm dev:desktop    # first build compiles the Rust shell
 ## Checks
 
 ```bash
-pnpm test           # bridge tests against the real pi binary
+pnpm test           # every package: desktop and bridge (the bridge needs the real pi binary)
 pnpm typecheck      # every workspace package
 ```
 

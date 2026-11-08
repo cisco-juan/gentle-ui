@@ -5,3 +5,9 @@ target/
 *.log
 .vite/
 apps/desktop/src-tauri/target/
+
+# Bridge sidecar bundle prepared before a release build (see docs/packaging.md). The directory keeps
+# a tracked marker so the bundle resource glob in tauri.conf.json always matches, even before a
+# release build has produced the bundle.
+apps/desktop/src-tauri/bridge/*
+!apps/desktop/src-tauri/bridge/.gitkeep
