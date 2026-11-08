@@ -12,46 +12,57 @@ import {
 	type InspectorTab,
 } from "../state/inspector";
 import { REVIEW_TAB, createReviewPanel } from "../state/review";
+import { MEMORY_TAB, createMemoryPanel } from "../state/memory";
 import { ReviewTab } from "./ReviewTab";
+import { MemoryTab } from "./MemoryTab";
+
+/** Tabs that own their state and their scroller instead of reusing the inspector's four reads. */
+type OwnedTab = "review" | "memory";
 
 /**
  * Right-hand inspector.
  *
  * Four tabs over workspace reads the bridge already performs: git changes with an inline diff, a file
  * tree with a read-only preview, the ODD task lists, and the subagent activity the agent publishes.
- * The fifth, Review, is native review (RDD) and owns its own state module and scroller. The panel owns
- * no shell state — it is mounted into the parent's grid and only speaks to the bridge through the chat
- * controller it is given.
+ * Review (native review, RDD) and Memory (Engram, read-only) each own their state module and their
+ * scroller. The panel owns no shell state — it is mounted into the parent's grid and only speaks to
+ * the bridge through the chat controller it is given.
  */
 export function Inspector(props: { chat: ChatControllerLike; onClose?: () => void }): JSX.Element {
 	const inspector = createInspector({ connect: () => props.chat.bridge() });
 	const review = createReviewPanel({ connect: () => props.chat.bridge() });
-	// Review keeps its own switch instead of widening the inspector's tab union: the other four tabs do
-	// not know it exists, and their state stays exactly as it was.
-	const [reviewOpen, setReviewOpen] = createSignal(false);
+	const memory = createMemoryPanel({ connect: () => props.chat.bridge() });
+	// Review and Memory keep their own switch instead of widening the inspector's tab union: the other
+	// four tabs do not know they exist, and their state stays exactly as it was.
+	const [ownedTab, setOwnedTab] = createSignal<OwnedTab | null>(null);
 	onCleanup(() => {
 		inspector.stop();
 		review.stop();
+		memory.stop();
 	});
 
-	function openTab(id: InspectorTab | "review"): void {
-		setReviewOpen(id === "review");
-		if (id !== "review") {
+	function openTab(id: InspectorTab | OwnedTab): void {
+		if (id !== "review" && id !== "memory") {
+			setOwnedTab(null);
 			inspector.select(id);
 			return;
 		}
-		void review.refresh();
+		setOwnedTab(id);
+		if (id === "review") void review.refresh();
+		else void memory.refresh();
 	}
 
-	function activeTab(id: InspectorTab | "review"): boolean {
-		return id === "review" ? reviewOpen() : !reviewOpen() && inspector.tab() === id;
+	function activeTab(id: InspectorTab | OwnedTab): boolean {
+		const owned = ownedTab();
+		if (id === "review" || id === "memory") return owned === id;
+		return owned === null && inspector.tab() === id;
 	}
 
 	return (
 		<aside class="inspector" aria-label="Inspector">
 			<header class="inspector-head">
 				<div class="inspector-tabs" role="tablist" aria-label="Inspector tabs">
-					<For each={[...INSPECTOR_TABS, REVIEW_TAB]}>
+					<For each={[...INSPECTOR_TABS, REVIEW_TAB, MEMORY_TAB]}>
 						{(entry) => (
 							<button
 								type="button"
@@ -74,20 +85,26 @@ export function Inspector(props: { chat: ChatControllerLike; onClose?: () => voi
 				</Show>
 			</header>
 
-			<div class="inspector-body" classList={{ "for-review": reviewOpen() }}>
-				<Show when={reviewOpen()}>
+			<div
+				class="inspector-body"
+				classList={{ "for-review": ownedTab() === "review", "for-memory": ownedTab() === "memory" }}
+			>
+				<Show when={ownedTab() === "review"}>
 					<ReviewTab review={review} />
 				</Show>
-				<Show when={!reviewOpen() && inspector.tab() === "changes"}>
+				<Show when={ownedTab() === "memory"}>
+					<MemoryTab memory={memory} />
+				</Show>
+				<Show when={ownedTab() === null && inspector.tab() === "changes"}>
 					<ChangesTab inspector={inspector} />
 				</Show>
-				<Show when={!reviewOpen() && inspector.tab() === "files"}>
+				<Show when={ownedTab() === null && inspector.tab() === "files"}>
 					<FilesTab inspector={inspector} />
 				</Show>
-				<Show when={!reviewOpen() && inspector.tab() === "tasks"}>
+				<Show when={ownedTab() === null && inspector.tab() === "tasks"}>
 					<TasksTab inspector={inspector} />
 				</Show>
-				<Show when={!reviewOpen() && inspector.tab() === "agents"}>
+				<Show when={ownedTab() === null && inspector.tab() === "agents"}>
 					<AgentsTab inspector={inspector} />
 				</Show>
 			</div>

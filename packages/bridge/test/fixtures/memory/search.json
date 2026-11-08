@@ -1,0 +1,34 @@
+{
+	"project": "gentle-shell-ui",
+	"project_path": "/work/repo",
+	"project_source": "git_root",
+	"result": "Found 2 memories.",
+	"results": [
+		{
+			"id": 643,
+			"pinned": false,
+			"project": "gentle-shell-ui",
+			"scope": "project",
+			"state": "active",
+			"sync_id": "obs-01093e8a2fa86f68",
+			"title": "Track gentle-shell desktop UI feature tasks",
+			"topic_key": "odd/gentle-shell-desktop-ui/tasks",
+			"type": "architecture",
+			"preview": "**What**: Feature document for a cross-platform desktop UI for Gentle Shell, at `odd/tasks/gentle-shell-desktop-ui.md`.",
+			"truncated": true
+		},
+		{
+			"id": 651,
+			"pinned": true,
+			"project": "gentle-shell-ui",
+			"scope": "project",
+			"state": "active",
+			"sync_id": "obs-01093e8a2fa87777",
+			"title": "Keep the bridge JSONL framing LF-only",
+			"topic_key": "bridge/framing",
+			"type": "bugfix",
+			"preview": "A generic line reader splits on U+2028 and corrupts JSON strings.",
+			"truncated": false
+		}
+	]
+}

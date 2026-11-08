@@ -1,0 +1,261 @@
+/* Memory panel. Same tone language as the rest of the inspector: surfaces differ by tone, a hairline
+ * only where two blocks of the same tone meet, and the accent is spent on the selected row and the
+ * active tab. Nothing here draws a card around the panel. */
+
+/* The panel brings its own scroller so the project line and the search field stay put; the other
+ * tabs keep the inspector body's scroller untouched. */
+.inspector-body.for-memory {
+	overflow: hidden;
+	padding: 0;
+}
+
+.memory {
+	display: flex;
+	flex-direction: column;
+	height: 100%;
+	min-height: 0;
+}
+
+.memory-head {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	flex: 0 0 auto;
+	padding: 4px 6px 6px;
+}
+
+.memory-project {
+	flex: 1 1 auto;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	padding: 2px 7px;
+	border-radius: 6px;
+	background: var(--surface-2);
+	font-family: var(--mono);
+	font-size: 10.5px;
+	color: var(--text-soft);
+}
+
+.memory-search {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	flex: 0 0 auto;
+	padding: 0 6px 6px;
+}
+
+.memory-input {
+	flex: 1 1 auto;
+	min-width: 0;
+	padding: 5px 8px;
+	border: none;
+	outline: none;
+	border-radius: 7px;
+	background: var(--surface-2);
+	color: var(--text);
+	font-size: 12px;
+	caret-color: var(--accent);
+}
+
+.memory-input::placeholder {
+	color: var(--muted);
+}
+
+.memory-input::-webkit-search-cancel-button {
+	display: none;
+}
+
+.memory-scroll {
+	flex: 1 1 auto;
+	min-height: 0;
+	overflow-y: auto;
+	overscroll-behavior: contain;
+	padding: 0 6px 12px;
+	scrollbar-width: thin;
+	scrollbar-color: var(--surface-3) transparent;
+}
+
+.memory-scroll::-webkit-scrollbar {
+	width: 8px;
+}
+
+.memory-scroll::-webkit-scrollbar-thumb {
+	background: var(--surface-3);
+	border-radius: 8px;
+	border: 2px solid transparent;
+	background-clip: content-box;
+}
+
+.memory-block {
+	padding: 4px 6px 9px;
+}
+
+/* `<Show>` renders markers, not elements, so element siblings stay adjacent for spacing. */
+.memory-block > * + * {
+	margin-top: 6px;
+}
+
+.memory-title {
+	margin: 0 0 5px;
+	font-family: var(--mono);
+	font-size: 9.5px;
+	font-weight: 500;
+	text-transform: uppercase;
+	letter-spacing: 0.6px;
+	color: var(--muted);
+}
+
+/* Rows are read, not tabulated: a narrow label column, values that wrap anywhere. */
+.memory-counts {
+	display: grid;
+	grid-template-columns: 92px minmax(0, 1fr);
+	gap: 2px 8px;
+	margin: 0;
+	padding: 2px 6px 8px;
+}
+
+.memory-counts dt {
+	font-size: 10.5px;
+	color: var(--muted);
+}
+
+.memory-counts dd {
+	margin: 0;
+	font-size: 11.5px;
+	color: var(--text-soft);
+	overflow-wrap: anywhere;
+}
+
+.memory-reason {
+	margin: 0;
+	font-size: 10.5px;
+	color: var(--warn);
+	overflow-wrap: anywhere;
+}
+
+.memory-raw {
+	margin: 0;
+	padding: 6px 7px;
+	max-height: 220px;
+	overflow: auto;
+	border-radius: 6px;
+	background: var(--surface);
+	font-family: var(--mono);
+	font-size: 10.5px;
+	line-height: 1.45;
+	color: var(--text-soft);
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+}
+
+/* ---------- results, grouped by the observation's own type ---------- */
+
+.memory-group {
+	padding: 6px 0 2px;
+}
+
+.memory-type {
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: 8px;
+	margin: 0;
+	padding: 0 6px 4px;
+	font-family: var(--mono);
+	font-size: 9.5px;
+	font-weight: 500;
+	text-transform: uppercase;
+	letter-spacing: 0.6px;
+	color: var(--muted);
+}
+
+.memory-type-count {
+	font-size: 9.5px;
+	color: var(--surface-3);
+	letter-spacing: 0;
+}
+
+.memory-list {
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+/* A row is a tone until it is selected; only the selected row gets the accent. */
+.memory-row {
+	display: flex;
+	align-items: baseline;
+	gap: 7px;
+	width: 100%;
+	padding: 5px 7px;
+	border-radius: 7px;
+	text-align: left;
+}
+
+.memory-row:hover {
+	background: var(--surface-2);
+}
+
+.memory-row.on {
+	background: var(--accent-dim);
+}
+
+.memory-id {
+	flex: 0 0 auto;
+	font-size: 10px;
+	color: var(--muted);
+}
+
+.memory-row.on .memory-id {
+	color: var(--accent);
+}
+
+.memory-row-title {
+	flex: 1 1 auto;
+	min-width: 0;
+	font-size: 11.5px;
+	line-height: 1.4;
+	color: var(--text-soft);
+	overflow-wrap: anywhere;
+}
+
+.memory-row.on .memory-row-title {
+	color: var(--text);
+}
+
+.memory-pin {
+	flex: 0 0 auto;
+	font-family: var(--mono);
+	font-size: 9px;
+	text-transform: uppercase;
+	letter-spacing: 0.5px;
+	color: var(--muted);
+}
+
+/* The selected row's text, in place: no second screen, nothing to navigate back from. */
+.memory-detail {
+	padding: 3px 7px 9px 24px;
+}
+
+.memory-text {
+	margin: 0;
+	max-height: 320px;
+	overflow: auto;
+	font-family: var(--mono);
+	font-size: 10.5px;
+	line-height: 1.5;
+	color: var(--text-soft);
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+	scrollbar-width: thin;
+	scrollbar-color: var(--surface-3) transparent;
+}
+
+.memory-note {
+	margin: 5px 0 0;
+	font-size: 10.5px;
+	line-height: 1.45;
+	color: var(--muted);
+}

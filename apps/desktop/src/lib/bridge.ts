@@ -2,6 +2,9 @@ import type {
 	ClientMessage,
 	ExtensionUiResponse,
 	GitStatus,
+	MemoryContextView,
+	MemoryProjectsView,
+	MemorySearchView,
 	ReviewAssessment,
 	ReviewMode,
 	ReviewStartView,
@@ -23,6 +26,14 @@ export type ReviewRequest =
 	| { readonly action: "consent"; readonly invocation: string };
 
 export type ReviewAnswer = ReviewStatusView | ReviewAssessment | ReviewMode | ReviewStartView;
+
+/** What the Memory panel can ask for. Every one of these reads; none of them writes. */
+export type MemoryRequest =
+	| { readonly action: "context" }
+	| { readonly action: "search"; readonly query: string; readonly limit?: number }
+	| { readonly action: "projects" };
+
+export type MemoryAnswer = MemoryContextView | MemorySearchView | MemoryProjectsView;
 
 interface Pending {
 	readonly resolve: (value: unknown) => void;
@@ -139,6 +150,32 @@ export class BridgeClient {
 		return this.#request<ReviewAnswer>({ kind: "review", id, action: request.action });
 	}
 
+	/**
+	 * Engram's memory for the bridge's workspace. One method for the whole family, typed per action,
+	 * so no component opens a raw socket and no component can ask for a write: the wire has no such
+	 * message.
+	 */
+	memory(request: { readonly action: "context" }): Promise<MemoryContextView>;
+	memory(request: {
+		readonly action: "search";
+		readonly query: string;
+		readonly limit?: number;
+	}): Promise<MemorySearchView>;
+	memory(request: { readonly action: "projects" }): Promise<MemoryProjectsView>;
+	memory(request: MemoryRequest): Promise<MemoryAnswer> {
+		const id = this.#nextId();
+		if (request.action === "search") {
+			return this.#request<MemorySearchView>({
+				kind: "memory",
+				id,
+				action: "search",
+				query: request.query,
+				...(request.limit === undefined ? {} : { limit: request.limit }),
+			});
+		}
+		return this.#request<MemoryAnswer>({ kind: "memory", id, action: request.action });
+	}
+
 	close(): void {
 		this.#socket?.close();
 		this.#socket = null;
@@ -191,6 +228,10 @@ export class BridgeClient {
 			return;
 		}
 		if (message.kind === "review") {
+			this.#settle(message.id, message.data);
+			return;
+		}
+		if (message.kind === "memory") {
 			this.#settle(message.id, message.data);
 			return;
 		}

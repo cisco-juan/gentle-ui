@@ -4,6 +4,7 @@ import { WebSocketServer, type WebSocket } from "ws";
 import type { ClientMessage, PiCommand, ServerMessage, SessionSummary } from "@gentle-shell/protocol";
 import { resolveCommand } from "./commands.ts";
 import { gitDiff, gitStatus } from "./git.ts";
+import { memoryContext, memoryProjects, memorySearch, type MemoryOptions } from "./memory.ts";
 import { resolvePiEnvironment } from "./pi-environment.ts";
 import {
 	answerConsent,
@@ -34,6 +35,8 @@ export interface BridgeServerOptions {
 	 * review family at a fake one; a packaged bridge leaves it undefined and discovery decides.
 	 */
 	readonly review?: ReviewOptions;
+	/** Engram options, for the same reason: a test points the memory family at a fake MCP server. */
+	readonly memory?: MemoryOptions;
 }
 
 export interface BridgeServerHandle {
@@ -127,6 +130,16 @@ export async function startBridgeServer(options: BridgeServerOptions = {}): Prom
 			return;
 		}
 
+		// Memory belongs to the workspace too: Engram derives its project from the workspace directory.
+		if (message.kind === "memory") {
+			try {
+				await dispatchMemory(socket, message);
+			} catch (error) {
+				send(socket, { kind: "error", id: message.id, message: errorMessage(error) });
+			}
+			return;
+		}
+
 		// Uploads belong to the agent home, not to a thread: the composer may attach a file before a
 		// thread exists, and the path is what the next prompt carries.
 		if (message.kind === "upload") {
@@ -159,7 +172,17 @@ export async function startBridgeServer(options: BridgeServerOptions = {}): Prom
 			return;
 		}
 
-		const host = message.kind === "close" ? hosts.get(message.threadId) : hosts.get(message.threadId);
+		// Everything above is workspace-scoped. Reaching here with an unknown kind means an older client
+		// asking for something this bridge does not have: say so instead of blaming a missing thread.
+		const loose = message as { kind?: unknown; id?: unknown };
+		if (loose.kind !== "close" && loose.kind !== "command" && loose.kind !== "ui-response") {
+			const text = `unsupported message kind: ${String(loose.kind)}`;
+			if (typeof loose.id === "string") send(socket, { kind: "error", id: loose.id, message: text });
+			else broadcast({ kind: "error", message: text });
+			return;
+		}
+
+		const host = hosts.get(message.threadId);
 		if (!host) {
 			if (message.kind === "command") {
 				send(socket, { kind: "result", id: message.id, threadId: message.threadId, command: message.command, ok: false, error: `unknown thread: ${message.threadId}` });
@@ -263,6 +286,47 @@ export async function startBridgeServer(options: BridgeServerOptions = {}): Prom
 			return;
 		}
 		send(socket, { kind: "review", id: message.id, action: "mode", data: await reviewModeStatus(workspace, reviewOptions) });
+	}
+
+	/**
+	 * One memory answer per action, each already projected by the bridge.
+	 *
+	 * An unavailable Engram is a typed answer, not an error: the panel has to say *why* it is empty,
+	 * and the `error` shape is reserved for a request this bridge cannot serve at all.
+	 */
+	async function dispatchMemory(
+		socket: WebSocket,
+		message: Extract<ClientMessage, { kind: "memory" }>,
+	): Promise<void> {
+		const memoryOptions = options.memory ?? {};
+		if (message.action === "search") {
+			// A search with no query is a caller mistake, so it is a real failure rather than an
+			// unavailable memory that the panel would have to explain.
+			const query = typeof message.query === "string" ? message.query.trim() : "";
+			if (query.length === 0) throw new Error("a memory search needs a query");
+			send(socket, {
+				kind: "memory",
+				id: message.id,
+				action: "search",
+				data: await memorySearch(workspace, query, message.limit, memoryOptions),
+			});
+			return;
+		}
+		if (message.action === "projects") {
+			send(socket, {
+				kind: "memory",
+				id: message.id,
+				action: "projects",
+				data: await memoryProjects(workspace, memoryOptions),
+			});
+			return;
+		}
+		send(socket, {
+			kind: "memory",
+			id: message.id,
+			action: "context",
+			data: await memoryContext(workspace, memoryOptions),
+		});
 	}
 
 	async function dispatchWorkspace(

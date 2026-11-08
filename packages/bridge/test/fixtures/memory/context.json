@@ -1,0 +1,6 @@
+{
+	"project": "gentle-shell-ui",
+	"project_path": "/work/repo",
+	"project_source": "git_root",
+	"result": "## Memory from Previous Sessions\n\n### Recent Sessions\n- **gentle-shell-ui** (2026-11-08 11:42:18) [0 observations]\n- **gentle-shell-ui** (2026-11-08 11:40:39) [0 observations]\n\n### Recent User Prompts\n- 2026-11-08 11:40:39: Corré bash: ls scripts. Una línea.\n\n### Recent Observations\n- [architecture] **Track gentle-shell desktop UI feature tasks**: **What**: Feature document for a cross-platform desktop UI for Gentle Shell.\n\n---\nMemory stats: 364 sessions, 644 observations across projects: rodada, gentle-shell-ui, laya-service, mesas, clinic-cloud, lyn-cargos, gym-personal-system, gp-rewards-backoffice-api, +16 more"
+}

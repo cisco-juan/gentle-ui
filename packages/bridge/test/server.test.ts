@@ -183,3 +183,20 @@ test("reports an unknown thread instead of hanging", async () => {
 		await server.close();
 	}
 });
+
+test("answers an unknown message kind instead of blaming a missing thread", async () => {
+	const server = await startBridgeServer();
+	const ws = connect(server.port, server.token);
+	try {
+		await new Promise((resolve) => ws.on("open", resolve));
+		// An older client asking for something this bridge does not have: the answer must name the kind,
+		// not report a thread that was never part of the request.
+		const answered = next(ws, (message) => message.kind === "error");
+		ws.send(JSON.stringify({ kind: "teleport", id: "kind-1" }));
+		const result = await answered;
+		assert.match(result.kind === "error" ? result.message : "", /unsupported message kind: teleport/);
+	} finally {
+		ws.close();
+		await server.close();
+	}
+});

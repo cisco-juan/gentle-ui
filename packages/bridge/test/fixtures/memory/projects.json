@@ -1,0 +1,26 @@
+{
+	"count": 3,
+	"projects": [
+		{
+			"name": "gentle-shell-ui",
+			"observation_count": 644,
+			"session_count": 364,
+			"prompt_count": 210,
+			"directories": ["/work/repo"]
+		},
+		{
+			"name": "mesas",
+			"observation_count": 52,
+			"session_count": 58,
+			"prompt_count": 60,
+			"directories": ["/work/mesas"]
+		},
+		{
+			"name": "rodada",
+			"observation_count": 3,
+			"session_count": 12,
+			"prompt_count": 5,
+			"directories": ["/work/rodada"]
+		}
+	]
+}

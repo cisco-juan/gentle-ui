@@ -274,6 +274,93 @@ export interface ReviewStartView {
 	readonly message: string;
 }
 
+/**
+ * The Memory tab: what Engram remembers, read over MCP stdio and projected before it reaches a
+ * component.
+ *
+ * The panel is read-only, so there is no `saved` or `updated` shape here at all: the bridge may only
+ * call tools that read, and every answer below is a read. `state` says what happened: `ok` for a
+ * payload this panel parsed, `unparsable` for an answer that was not the JSON it expects (`raw`
+ * keeps the text), and `unavailable` for a memory that could not be asked (no binary, no handshake,
+ * no answer in time). A reason and a message always accompany the last two, so an empty list is
+ * never mistaken for "you have no memories".
+ */
+export type MemoryState = "ok" | "unparsable" | "unavailable";
+
+/** Why there is no memory to show, in the panel's own vocabulary. */
+export type MemoryFailureReason =
+	| "binary-missing"
+	| "handshake-failed"
+	| "timeout"
+	| "tool-refused"
+	| "tool-error";
+
+/** The memory stats Engram prints at the end of a context answer. */
+export interface MemoryCounts {
+	readonly sessions: number;
+	readonly observations: number;
+	readonly projects: number;
+}
+
+/** One search hit. `text` is the text the server returned for it, not a field this panel filled in. */
+export interface MemoryObservation {
+	/** Engram's own id, as text so an id the panel never saw cannot be renumbered. Empty when absent. */
+	readonly id: string;
+	readonly title: string;
+	readonly type: string;
+	readonly scope: string;
+	readonly pinned: boolean;
+	readonly text: string;
+	/** True when Engram itself truncated this text. */
+	readonly truncated: boolean;
+}
+
+/** Answer to `{kind:"memory", action:"context"}`: the project Engram derived and its recent history. */
+export interface MemoryContextView {
+	readonly state: MemoryState;
+	readonly reason: MemoryFailureReason | null;
+	readonly message: string;
+	readonly project: string;
+	readonly projectPath: string;
+	/** How Engram decided: `git_root`, `explicit_override`, `process_override`, … */
+	readonly projectSource: string;
+	readonly counts: MemoryCounts | null;
+	readonly text: string;
+	readonly raw: string | null;
+}
+
+/** Answer to `{kind:"memory", action:"search"}`: the query, and the hits grouped by the UI. */
+export interface MemorySearchView {
+	readonly state: MemoryState;
+	readonly reason: MemoryFailureReason | null;
+	readonly message: string;
+	readonly project: string;
+	readonly query: string;
+	readonly observations: readonly MemoryObservation[];
+	readonly text: string;
+	readonly raw: string | null;
+}
+
+/** One project in Engram's index, with the counts it reports for it. */
+export interface MemoryProjectEntry {
+	readonly name: string;
+	readonly observations: number;
+	readonly sessions: number;
+	readonly prompts: number;
+	readonly directories: readonly string[];
+}
+
+/** Answer to `{kind:"memory", action:"projects"}`: every project Engram knows. */
+export interface MemoryProjectsView {
+	readonly state: MemoryState;
+	readonly reason: MemoryFailureReason | null;
+	readonly message: string;
+	readonly count: number;
+	readonly projects: readonly MemoryProjectEntry[];
+	readonly text: string;
+	readonly raw: string | null;
+}
+
 export type ClientMessage =
 	| ({ readonly kind: "open"; readonly id: string } & OpenThreadRequest)
 	| { readonly kind: "close"; readonly threadId: string }
@@ -302,7 +389,17 @@ export type ClientMessage =
 	/** Start a review with the tokens its own status transition carried. */
 	| { readonly kind: "review"; readonly id: string; readonly action: "start"; readonly tokens: readonly string[] }
 	/** Answer the blocking consent question by replaying the chosen invocation. */
-	| { readonly kind: "review"; readonly id: string; readonly action: "consent"; readonly invocation: string };
+	| { readonly kind: "review"; readonly id: string; readonly action: "consent"; readonly invocation: string }
+	/** Engram's memory for the bridge's workspace. Every action here reads; none of them writes. */
+	| { readonly kind: "memory"; readonly id: string; readonly action: "context" }
+	| {
+			readonly kind: "memory";
+			readonly id: string;
+			readonly action: "search";
+			readonly query: string;
+			readonly limit?: number;
+	  }
+	| { readonly kind: "memory"; readonly id: string; readonly action: "projects" };
 
 export type ServerMessage =
 	| {
@@ -339,7 +436,17 @@ export type ServerMessage =
 			readonly kind: "review";
 			readonly id: string;
 	  } & ReviewResult)
+	| ({
+			readonly kind: "memory";
+			readonly id: string;
+	  } & MemoryResult)
 	| { readonly kind: "error"; readonly id?: string; readonly message: string };
+
+/** One memory answer, tagged with the action that asked for it. */
+export type MemoryResult =
+	| { readonly action: "context"; readonly data: MemoryContextView }
+	| { readonly action: "search"; readonly data: MemorySearchView }
+	| { readonly action: "projects"; readonly data: MemoryProjectsView };
 
 /** One review answer, tagged with the action that asked for it. */
 export type ReviewResult =
