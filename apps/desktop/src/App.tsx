@@ -67,6 +67,7 @@ export default function App() {
 				{ id: "inspector", label: "Toggle the inspector", hint: format("Mod+Alt+B"), run: () => layout.toggleInspector() },
 				{ id: "layout", label: "Reset the layout", hint: "panels back to their default size", run: () => layout.reset() },
 				{ id: "interrupt", label: "Interrupt the agent", hint: "Esc", run: () => void chat.interrupt() },
+				{ id: "reconnect", label: "Reconnect to the agent", hint: "open a fresh connection", run: () => void chat.reconnect() },
 			],
 		};
 
@@ -225,6 +226,8 @@ export default function App() {
 					onPermissionMode={(mode) => void chat.setPermissionMode(mode)}
 				/>
 				<StatusBar
+					connection={chat.connection}
+					onReconnect={() => void chat.reconnect()}
 					model={chat.model}
 					cost={chat.cost}
 					running={chat.running}

@@ -12,7 +12,7 @@ import { Icon } from "./Icon";
  */
 export function Sidebar(props: {
 	project: string;
-	connection: "connecting" | "connected" | "failed";
+	connection: "connecting" | "connected" | "failed" | "disconnected";
 	statuses: Record<string, string>;
 	threads: readonly SessionSummary[];
 	activePath: string | null;

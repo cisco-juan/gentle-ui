@@ -8,6 +8,8 @@ import { Icon } from "./Icon";
  * somewhere always visible — a keyboard chord alone is not a discoverable way back.
  */
 export function StatusBar(props: {
+	connection: Accessor<"connecting" | "connected" | "failed" | "disconnected">;
+	onReconnect: () => void;
 	model: Accessor<string>;
 	cost: Accessor<number>;
 	running: Accessor<boolean>;
@@ -17,10 +19,25 @@ export function StatusBar(props: {
 	onToggleRail: () => void;
 	onToggleInspector: () => void;
 }) {
+	// "ready" while the bridge is down is a lie the user acts on, so the connection comes first.
+	const label = (): string => {
+		const state = props.connection();
+		if (state === "connecting") return "connecting…";
+		if (state === "failed") return "bridge unreachable";
+		if (state === "disconnected") return "disconnected";
+		return props.running() ? "running" : "ready";
+	};
+	const canReconnect = (): boolean => props.connection() === "failed" || props.connection() === "disconnected";
+
 	return (
 		<div class="statusbar">
 			<span class="left">
-				{props.running() ? "running" : "ready"}
+				{label()}
+				<Show when={canReconnect()}>
+					<button class="status-reconnect" onClick={() => props.onReconnect()}>
+						reconnect
+					</button>
+				</Show>
 				<Show when={props.hint().length > 0}>
 					<span class="status-hint">{props.hint()}</span>
 				</Show>

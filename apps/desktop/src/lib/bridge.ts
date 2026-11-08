@@ -16,6 +16,7 @@ import type {
 } from "@gentle-shell/protocol";
 
 type Listener = (message: ServerMessage) => void;
+type CloseListener = () => void;
 
 /** What the Review panel can ask the bridge for; each action answers with its own shape. */
 export type ReviewRequest =
@@ -43,6 +44,9 @@ interface Pending {
 export class BridgeClient {
 	#socket: WebSocket | null = null;
 	#listeners = new Set<Listener>();
+	#closeListeners = new Set<CloseListener>();
+	/** Set while `close()` runs, so a close the caller asked for is not reported as a loss. */
+	#closing = false;
 	#pending = new Map<string, Pending>();
 	#counter = 0;
 	readonly #url: string;
@@ -74,9 +78,11 @@ export class BridgeClient {
 				reject(new Error(`cannot reach the bridge at ${this.#url}`));
 			});
 			socket.addEventListener("close", () => {
-				this.#socket = null;
+				const lost = this.#socket === socket && !this.#closing;
+				if (this.#socket === socket) this.#socket = null;
 				for (const [, pending] of this.#pending) pending.reject(new Error("bridge connection closed"));
 				this.#pending.clear();
+				if (lost) for (const listener of [...this.#closeListeners]) listener();
 			});
 		});
 	}
@@ -84,6 +90,12 @@ export class BridgeClient {
 	subscribe(listener: Listener): () => void {
 		this.#listeners.add(listener);
 		return () => this.#listeners.delete(listener);
+	}
+
+	/** Called once when the connection ends without `close()` having been asked for. */
+	onClose(listener: CloseListener): () => void {
+		this.#closeListeners.add(listener);
+		return () => this.#closeListeners.delete(listener);
 	}
 
 	open(cwd: string): Promise<{ threadId: string; state: unknown }> {
@@ -177,8 +189,13 @@ export class BridgeClient {
 	}
 
 	close(): void {
-		this.#socket?.close();
-		this.#socket = null;
+		this.#closing = true;
+		try {
+			this.#socket?.close();
+		} finally {
+			this.#socket = null;
+			this.#closing = false;
+		}
 	}
 
 	#nextId(): string {

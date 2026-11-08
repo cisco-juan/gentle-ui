@@ -364,7 +364,8 @@ main {
 	background: var(--ok);
 }
 
-.connection .dot.failed {
+.connection .dot.failed,
+.connection .dot.disconnected {
 	background: var(--error);
 }
 
@@ -1007,6 +1008,20 @@ main {
 	font-size: 10.5px;
 	color: var(--muted);
 	opacity: 0.85;
+}
+
+.status-reconnect {
+	margin-left: 10px;
+	padding: 1px 8px;
+	border-radius: 5px;
+	font-family: var(--sans);
+	font-size: 10.5px;
+	color: var(--accent);
+	background: var(--accent-dim);
+}
+
+.status-reconnect:hover {
+	color: var(--text);
 }
 
 .statusbar .right {

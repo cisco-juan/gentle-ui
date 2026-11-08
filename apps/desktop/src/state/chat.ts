@@ -37,7 +37,7 @@ export interface ChatController {
 	readonly items: Accessor<ChatItem[]>;
 	readonly draft: Accessor<string>;
 	readonly running: Accessor<boolean>;
-	readonly connection: Accessor<"connecting" | "connected" | "failed">;
+	readonly connection: Accessor<"connecting" | "connected" | "failed" | "disconnected">;
 	readonly model: Accessor<string>;
 	readonly cost: Accessor<number>;
 	readonly statuses: Accessor<Record<string, string>>;
@@ -61,6 +61,8 @@ export interface ChatController {
 	/** Send any allow-listed Pi command through the open thread. */
 	invoke<T>(command: string, params?: Record<string, unknown>): Promise<T>;
 	connect(): Promise<void>;
+	/** Open a fresh connection and land back in the thread that was on screen. */
+	reconnect(): Promise<void>;
 	/** `attachments` defaults to the composer's pending list, which is drained either way. */
 	send(text: string, attachments?: readonly Attachment[]): Promise<void>;
 	interrupt(): Promise<void>;
@@ -121,7 +123,7 @@ export function createChatController(options: { url: string; cwd: string }): Cha
 	const [items, setItems] = createSignal<ChatItem[]>([]);
 	const [draft, setDraft] = createSignal("");
 	const [running, setRunning] = createSignal(false);
-	const [connection, setConnection] = createSignal<"connecting" | "connected" | "failed">("connecting");
+	const [connection, setConnection] = createSignal<"connecting" | "connected" | "failed" | "disconnected">("connecting");
 	const [model, setModel] = createSignal("");
 	const [cost, setCost] = createSignal(0);
 	const [statuses, setStatuses] = createSignal<Record<string, string>>({});
@@ -137,6 +139,9 @@ export function createChatController(options: { url: string; cwd: string }): Cha
 	const [attachments, setAttachments] = createSignal<readonly Attachment[]>([]);
 
 	let client: BridgeClient | null = null;
+	/** Detaches the listeners of the current connection. */
+	let teardown: (() => void) | null = null;
+	let connecting = false;
 	let threadId: string | null = null;
 	let counter = 0;
 	let attachmentCounter = 0;
@@ -181,7 +186,12 @@ export function createChatController(options: { url: string; cwd: string }): Cha
 	function handle(message: ServerMessage): void {
 		if (message.kind === "log") return;
 		if (message.kind === "exited") {
-			setRunning(false);
+			// The bridge is up but this thread's agent is gone, so nothing sent from here can arrive.
+			threadId = null;
+			batch(() => {
+				setRunning(false);
+				setConnection("disconnected");
+			});
 			append({ kind: "notice", id: nextId(), text: "The agent process exited. Reconnect to continue.", tone: "error" });
 			return;
 		}
@@ -314,12 +324,49 @@ export function createChatController(options: { url: string; cwd: string }): Cha
 		}
 	}
 
+	/** Stops listening to, and closes, whatever connection is current. Safe to call with none. */
+	function dropClient(): void {
+		teardown?.();
+		teardown = null;
+		client?.close();
+		client = null;
+		threadId = null;
+	}
+
+	/** The socket ended without being asked to: say so, and stop pretending the agent is reachable. */
+	function lost(dropped: BridgeClient): void {
+		// A socket that is not the current one was already replaced; its close is old news.
+		if (client !== dropped) return;
+		client = null;
+		threadId = null;
+		batch(() => {
+			setRunning(false);
+			setConnection("disconnected");
+		});
+		append({
+			kind: "notice",
+			id: nextId(),
+			text: "The connection to the bridge was lost. Reconnect to continue.",
+			tone: "error",
+		});
+	}
+
 	async function connect(): Promise<void> {
+		if (connecting) return;
+		connecting = true;
+		// Where to land again after a drop: the thread on screen, else the one this install was last in.
+		const resume = activePath() ?? readLastThread();
+		dropClient();
 		setConnection("connecting");
 		const next = new BridgeClient(options.url);
 		try {
 			await next.connect();
-			next.subscribe(handle);
+			const stopRecords = next.subscribe(handle);
+			const stopClose = next.onClose(() => lost(next));
+			teardown = () => {
+				stopRecords();
+				stopClose();
+			};
 			const opened = await next.open(options.cwd);
 			threadId = opened.threadId;
 			client = next;
@@ -332,13 +379,18 @@ export function createChatController(options: { url: string; cwd: string }): Cha
 
 			// A workspace you come back to should be the one you left: reopen the thread you were in,
 			// and fall back to the fresh session when that file is gone.
-			const remembered = readLastThread();
-			const current = (opened.state as { sessionFile?: string } | null)?.sessionFile ?? null;
-			if (remembered !== null && remembered !== current) {
+			const current = sessionFileOf(opened.state);
+			if (resume !== null && resume !== current) {
 				// A thread that is gone is forgotten quietly: an error on every launch helps nobody.
-				if (!(await openThread(remembered, { quiet: true }))) forgetLastThread();
+				if (!(await openThread(resume, { quiet: true }))) forgetLastThread();
 			}
 		} catch (error) {
+			// A socket that opened but never finished the handshake would stay open and subscribed.
+			teardown?.();
+			teardown = null;
+			next.close();
+			client = null;
+			threadId = null;
 			setConnection("failed");
 			append({
 				kind: "notice",
@@ -346,6 +398,8 @@ export function createChatController(options: { url: string; cwd: string }): Cha
 				text: error instanceof Error ? error.message : String(error),
 				tone: "error",
 			});
+		} finally {
+			connecting = false;
 		}
 	}
 
@@ -638,8 +692,17 @@ export function createChatController(options: { url: string; cwd: string }): Cha
 	}
 
 	function answerPermission(requestId: string, response: ExtensionUiResponse): void {
-		if (!client || !threadId) return;
-		client.answer(threadId, requestId, response);
+		if (!client || !threadId) {
+			notify("the agent is not connected; the answer was not sent and the question is still open", "error");
+			return;
+		}
+		try {
+			client.answer(threadId, requestId, response);
+		} catch (error) {
+			// The card stays open: marking it answered would say the agent heard something it never got.
+			notify(`the answer was not sent: ${errorText(error)}`, "error");
+			return;
+		}
 		setItems((current) =>
 			current.map((item) =>
 				item.kind === "permission" && item.request.id === requestId
@@ -728,6 +791,7 @@ function errorText(error: unknown): string {
 		removeAttachment,
 		invoke,
 		connect,
+		reconnect: connect,
 		send,
 		interrupt,
 		newThread,
