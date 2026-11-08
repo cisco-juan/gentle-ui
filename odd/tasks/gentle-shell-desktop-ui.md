@@ -387,6 +387,17 @@ Observation while closing T20: `profiles.json` holds a profile literally named `
 `Claude-Grok`, `OnlyGrok` and `grok-opencode`. The UI renders it faithfully, so it is data, not a display bug — most
 likely created by an earlier session from a numeric parse. Left untouched: deleting a profile is the user's call.
 
+L15. 2026-11-08. Integration, as the user asked ("ve pasando todo a develop"): `develop` was created from
+`feat/desktop-ui` (the settings-editor work, 8 commits) and `feat/desktop-transcript` was merged into it. Seven
+conflicts, all additive — both branches grew `packages/protocol/src/index.ts`, the request router in
+`packages/bridge/src/server.ts` and the composer's permission menu. Resolution: every family kept (settings,
+packages, mcp, history, agents share one wire file and one router), and the settings branch's wording kept for the
+permission row ("default" / "set in a terminal"), which says more than the label this branch had for the same fact.
+After the merge: typecheck clean for protocol, bridge and desktop; 163 desktop and 216 bridge tests green — both
+suites running together for the first time. Smoke test in the app on `develop`: a thread opened with 72 rows (27
+thinking, 35 tools, 1 file card), all six inspector tabs answered, no console or page errors. The main tree
+(`feat/desktop-ui`) and the settings session's uncommitted work were not touched.
+
 L14. 2026-11-08. Delivery plan the user announced for when these tasks are done, verbatim: "al finalizar todas
 estas tareas vamos a crear el repo en mi perfil, lo llamaremos gentle-ui, tendremos la documentacion completa en
 inlges y espanol, haremos referencia a gentle shell y sus herramientas, ademas, tendremos 2 ramas, master/main y
