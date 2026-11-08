@@ -31,16 +31,13 @@ export function Composer(props: {
 		const value = text();
 		if (!value.startsWith("/")) return [];
 		const needle = value.slice(1).toLowerCase();
-		const all = props.commands();
-		// Prefix matches first: typing "/" must not bury the built-in commands behind skill noise.
-		const ranked = all
+		// Bare "/" must open on the shell's own commands, not on package noise: the agent advertises
+		// 86 commands here and 36 of them are `gentle:*`, which is what a new user is looking for.
+		return props
+			.commands()
 			.filter((command) => command.name.toLowerCase().includes(needle))
-			.sort((left, right) => {
-				const leftPrefix = left.name.toLowerCase().startsWith(needle) ? 0 : 1;
-				const rightPrefix = right.name.toLowerCase().startsWith(needle) ? 0 : 1;
-				return leftPrefix - rightPrefix || left.name.localeCompare(right.name);
-			});
-		return ranked.slice(0, 12);
+			.sort((left, right) => rank(left.name, needle) - rank(right.name, needle) || left.name.localeCompare(right.name))
+			.slice(0, 14);
 	});
 
 	const filteredModels = createMemo(() => {
@@ -50,6 +47,13 @@ export function Composer(props: {
 	});
 
 	const commandsMatching = (needle: string) => props.commands().filter((command) => command.name.toLowerCase().includes(needle));
+
+	function rank(name: string, needle: string): number {
+		const lower = name.toLowerCase();
+		const group = lower.startsWith("gentle:") ? 0 : lower.startsWith("skill:") ? 2 : 1;
+		const prefix = needle.length === 0 || lower.startsWith(needle) ? 0 : 1;
+		return group * 2 + prefix;
+	}
 
 	function submit(): void {
 		const message = text().trim();
