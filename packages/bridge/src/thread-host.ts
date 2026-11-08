@@ -1,10 +1,13 @@
 import { randomUUID } from "node:crypto";
 import type { ExtensionUiRequest, ExtensionUiResponse, OpenThreadRequest } from "@gentle-shell/protocol";
 import { PiProcess } from "./pi-process.ts";
+import { resolvePiEnvironment } from "./pi-environment.ts";
 
 interface ThreadHostOptions {
 	readonly executable?: string;
 	readonly env?: Readonly<Record<string, string>>;
+	/** Package root passed to `-e`; resolved from the machine when omitted. */
+	readonly extension?: string;
 }
 
 /**
@@ -17,15 +20,22 @@ export class ThreadHost {
 	readonly id = randomUUID();
 	readonly pi: PiProcess;
 	readonly cwd: string;
+	/** Gentle Shell package root the agent was started with, when one was found. */
+	readonly extensionPath: string | null;
 	/** Last `get_state` payload, kept so a reconnecting UI can render without an extra round trip. */
 	state: unknown = null;
 
 	constructor(request: OpenThreadRequest, options: ThreadHostOptions = {}) {
 		this.cwd = request.cwd ?? process.cwd();
+		const environment = resolvePiEnvironment({
+			...(options.extension === undefined ? {} : { extension: options.extension }),
+		});
+		this.extensionPath = environment.extensionPath;
 		this.pi = new PiProcess({
 			cwd: this.cwd,
+			args: environment.args,
+			env: { ...environment.env, ...options.env },
 			...(options.executable === undefined ? {} : { executable: options.executable }),
-			...(options.env === undefined ? {} : { env: options.env }),
 		});
 		this.pi.start();
 	}

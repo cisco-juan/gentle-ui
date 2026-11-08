@@ -13,6 +13,8 @@ export interface BridgeServerOptions {
 	readonly env?: Readonly<Record<string, string>>;
 	/** Session index behind the `sessions` request. Tests inject one instead of hitting the disk. */
 	readonly sessions?: () => Promise<readonly SessionSummary[]>;
+	/** Gentle Shell package root passed to `-e`; resolved from the machine when omitted. */
+	readonly extension?: string;
 }
 
 export interface BridgeServerHandle {
@@ -88,6 +90,7 @@ export async function startBridgeServer(options: BridgeServerOptions = {}): Prom
 			const host = new ThreadHost(message, {
 				...(options.executable === undefined ? {} : { executable: options.executable }),
 				...(options.env === undefined ? {} : { env: options.env }),
+				...(options.extension === undefined ? {} : { extension: options.extension }),
 			});
 			attach(host);
 			try {
