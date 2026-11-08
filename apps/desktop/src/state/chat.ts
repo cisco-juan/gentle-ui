@@ -1,7 +1,7 @@
 import { batch, createSignal, type Accessor } from "solid-js";
 import type { ExtensionUiRequest, ExtensionUiResponse, ServerMessage, SessionSummary, UploadedFile } from "@gentle-shell/protocol";
 import { BridgeClient } from "../lib/bridge";
-import { describeCommand, isRunnableCommand } from "../lib/commands";
+import { checkCommand } from "../lib/commands";
 import {
 	IMAGE_ONLY_PROMPT,
 	buildImages,
@@ -396,18 +396,21 @@ export function createChatController(options: { url: string; cwd: string }): Cha
 
 		// Every path that can start a prompt ends here — composer, palette, chips — so this is the one
 		// place that keeps a terminal-only command from leaving and coming back as "requires TUI mode".
-		const slash = message.startsWith("/") ? (message.slice(1).split(/\s+/)[0] ?? "") : "";
-		if (slash.length > 0 && !isRunnableCommand(slash)) {
-			const described = describeCommand(slash);
-			append({
-				kind: "notice",
-				id: nextId(),
-				text: `/${slash} only works in a terminal: ${described.note ?? "it needs a terminal view"}.${
-					described.surface ? ` Use ${described.surface} here instead.` : ""
-				}`,
-				tone: "warning",
-			});
-			return;
+		const firstLine = message.split("\n")[0] ?? "";
+		if (firstLine.startsWith("/")) {
+			const verdict = checkCommand(firstLine);
+			if (!verdict.runnable) {
+				const described = verdict.description;
+				append({
+					kind: "notice",
+					id: nextId(),
+					text: `/${firstLine.slice(1)} only works in a terminal: ${described.note ?? "it needs a terminal view"}.${
+						described.surface ? ` Use ${described.surface} here instead.` : ""
+					}`,
+					tone: "warning",
+				});
+				return;
+			}
 		}
 		append({ kind: "user", id: nextId(), text: message });
 		setRunning(true);

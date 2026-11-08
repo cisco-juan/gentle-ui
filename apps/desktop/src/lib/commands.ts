@@ -1,10 +1,13 @@
 /**
  * What a slash command actually does in this host.
  *
- * Gentle Shell registers about three dozen `/gentle:*` commands. Many of them open terminal overlays
- * through the TUI, which do not exist over RPC: sending one produces a warning and nothing else. A
- * desktop shell must know the difference instead of forwarding everything and letting the user read
- * an apology.
+ * Gentle Shell registers 36 commands. Over RPC there is no overlay, no fullscreen view and no
+ * terminal modal: `ctx.ui.custom()` returns undefined, so a terminal-only command runs, draws
+ * nothing, and either warns or silently does nothing. This table is the difference between forwarding
+ * a command and lying to the user about what happened.
+ *
+ * Evidence: the registration and its guard in the package (`extensions/*.ts`), plus Pi's own RPC
+ * extension-UI limits. A command is only listed as terminal when its handler needs the terminal.
  */
 export type CommandKind = "agent" | "terminal";
 
@@ -12,120 +15,142 @@ export interface CommandDescription {
 	/** Command name without the leading slash. */
 	readonly name: string;
 	readonly kind: CommandKind;
-	/** Why it cannot run here, in the user's words. Only for terminal commands. */
+	/** Why the bare form cannot run here, in the user's words. */
 	readonly note?: string;
 	/** The surface in this shell that does the same job, when one exists. */
 	readonly surface?: string;
+	/**
+	 * First arguments that make the command safe anyway: several commands open an overlay only when
+	 * they have nothing to do (`gentle:profiles export` never touches the picker, `gentle:mode status`
+	 * only reads).
+	 */
+	readonly safeArgs?: readonly string[];
 }
 
-const TUI_ONLY: readonly CommandDescription[] = [
+const COMMANDS: readonly CommandDescription[] = [
 	{
 		name: "gentle:agents",
 		kind: "terminal",
-		note: "the agents overlay is a terminal view",
-		surface: "Agents",
-	},
-	{
-		name: "gentle:history",
-		kind: "terminal",
-		note: "the session picker is a terminal view",
-		surface: "the thread rail",
+		note: "the subagent list is a fullscreen terminal overlay",
+		surface: "the Agents tab",
 	},
 	{
 		name: "gentle:panel",
 		kind: "terminal",
-		note: "panels are terminal widgets",
+		note: "the panel sheet is a terminal layout",
 		surface: "the inspector",
-	},
-	{
-		name: "gentle:usage",
-		kind: "terminal",
-		note: "the usage view is a terminal overlay",
-		surface: "the status line",
-	},
-	{
-		name: "gentle:stats",
-		kind: "terminal",
-		note: "the stats view is a terminal overlay",
 	},
 	{
 		name: "gentle:changes",
 		kind: "terminal",
-		note: "the changes panel is a terminal view",
+		note: "the diff browser is a fullscreen terminal view",
 		surface: "the Changes tab",
 	},
 	{
 		name: "gentle:jobs",
 		kind: "terminal",
-		note: "the jobs view is a terminal overlay",
-	},
-	{
-		name: "gentle:customize",
-		kind: "terminal",
-		note: "the visual customiser edits the terminal layout",
-		surface: "dragging the panel dividers",
-	},
-	{
-		name: "gentle:banner",
-		kind: "terminal",
-		note: "the startup banner belongs to the terminal",
-	},
-	{
-		name: "gentle:banner-color",
-		kind: "terminal",
-		note: "the startup banner belongs to the terminal",
-	},
-	{
-		name: "gentle:toggle-rose",
-		kind: "terminal",
-		note: "it toggles a terminal logo",
-	},
-	{
-		name: "gentle:toggle-text-logo",
-		kind: "terminal",
-		note: "it toggles a terminal logo",
-	},
-	{
-		name: "gentle:animations",
-		kind: "terminal",
-		note: "it toggles terminal animations",
-	},
-	{
-		name: "gentle:vim",
-		kind: "terminal",
-		note: "it configures the terminal editor",
+		note: "the jobs list with output tails is a terminal overlay",
 	},
 	{
 		name: "gentle:commands",
 		kind: "terminal",
-		note: "the command list is a terminal view",
+		note: "the command sheet is the terminal palette",
 		surface: "the palette",
 	},
 	{
-		name: "gentle:design",
+		name: "gentle:customize",
 		kind: "terminal",
-		note: "the design canvas is a terminal view",
+		note: "the customiser is a two-column terminal modal",
+		surface: "the settings sheet and the panel dividers",
+	},
+	{
+		name: "gentle:profiles",
+		kind: "terminal",
+		note: "the bare command opens the fullscreen models screen",
+		surface: "the model chip in the composer",
+		safeArgs: ["export", "import", "publish", "clear", "export-routing", "restore-routing"],
+	},
+	{
+		name: "gentle:mode",
+		kind: "terminal",
+		note: "permission changes are refused outside a terminal session",
+		surface: "the permissions chip",
+		safeArgs: ["status"],
+	},
+	{
+		name: "gentle:yolo",
+		kind: "terminal",
+		note: "permission changes are refused outside a terminal session",
+		surface: "the permissions chip",
+		safeArgs: ["status"],
+	},
+	{
+		name: "gentle:usage",
+		kind: "terminal",
+		note: "the usage windows overlay is a terminal view",
+	},
+	{
+		name: "gentle:stats",
+		kind: "terminal",
+		note: "the activity heatmap overlay is a terminal view",
+	},
+	{
+		name: "gentle:guide",
+		kind: "terminal",
+		note: "the guided tour steps through terminal popovers",
+		surface: "asking the agent for the tour instead",
 	},
 	{
 		name: "gentle:music",
 		kind: "terminal",
-		note: "the music controls are a terminal view",
+		note: "gentle-stream takes over the terminal",
 	},
 	{
 		name: "gentle:voice",
 		kind: "terminal",
-		note: "the voice controls are a terminal view",
+		note: "dictation writes into the terminal editor",
+	},
+	{
+		name: "gentle:review-session-permission",
+		kind: "terminal",
+		note: "its session identity is only captured inside a terminal",
+	},
+	{
+		name: "history",
+		kind: "terminal",
+		note: "prompt history is searched in a terminal overlay",
 	},
 ];
 
-const INDEX = new Map<string, CommandDescription>(TUI_ONLY.map((entry) => [entry.name.toLowerCase(), entry]));
+const INDEX = new Map<string, CommandDescription>(COMMANDS.map((entry) => [entry.name.toLowerCase(), entry]));
 
-/** Unknown commands are assumed to be agent work: refusing a real command is worse than forwarding it. */
-export function describeCommand(name: string): CommandDescription {
-	return INDEX.get(name.toLowerCase()) ?? { name, kind: "agent" };
+export interface CommandVerdict {
+	/** True when the command means something to this host as written. */
+	readonly runnable: boolean;
+	readonly description: CommandDescription;
 }
 
-/** True when the command means something to this host. */
+/**
+ * Judge a command line, not just a name.
+ *
+ * `gentle:profiles export` is agent work while bare `gentle:profiles` is a terminal screen, so the
+ * first argument decides.
+ */
+export function checkCommand(line: string): CommandVerdict {
+	const trimmed = line.trim().replace(/^\//, "");
+	const [name = "", argument] = trimmed.split(/\s+/);
+	const description = INDEX.get(name.toLowerCase()) ?? { name, kind: "agent" };
+	if (description.kind === "agent") return { runnable: true, description };
+
+	const allowed = (description.safeArgs ?? []).some((safe) => safe === argument?.toLowerCase());
+	return { runnable: allowed, description };
+}
+
+/** Convenience for a bare name, which is all a suggestion row knows. */
 export function isRunnableCommand(name: string): boolean {
-	return describeCommand(name).kind === "agent";
+	return checkCommand(name).runnable;
+}
+
+export function describeCommand(name: string): CommandDescription {
+	return checkCommand(name).description;
 }

@@ -45,6 +45,25 @@ package with `GENTLE_PI_PACKAGE`.
 
 Measured effect: 30 commands with no `gentle:*` before, 86 commands with 36 `gentle:*` after.
 
+## Commands have a host
+
+The package registers 36 commands and about sixteen are terminal-bound: overlays, fullscreen views and
+modals that do not exist over RPC, where `ctx.ui.custom()` returns undefined and the handler either
+warns or does nothing silently. The desktop shell carries the classification in
+`apps/desktop/src/lib/commands.ts` and refuses those commands at the one choke point every prompt
+passes through, naming the surface that does the job instead.
+
+The first argument decides, because it changes the command: bare `gentle:profiles` opens the
+fullscreen model picker and even throws, while `gentle:profiles export` never touches it;
+`gentle:mode status` only reads while `gentle:mode yolo` mutates permissions refused outside a
+terminal session. Unknown commands are forwarded on purpose: refusing a real command is worse than
+letting the agent answer.
+
+Several of these have an RPC request that replaces the command entirely: model choice is `set_model`
+and `get_available_models`, the command list is `get_commands`, session numbers are `get_session_stats`,
+and `gentle:changes` needs the host to diff for itself — which is exactly why the inspector has a git
+layer.
+
 ## The protocol we speak
 
 `pi --mode rpc` is JSONL over stdin/stdout, LF-framed. Node's `readline` is not usable: it splits on
