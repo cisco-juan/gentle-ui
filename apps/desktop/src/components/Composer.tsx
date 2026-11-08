@@ -72,6 +72,8 @@ export function Composer(props: {
 		// The keymap layer cannot reach this textarea, so it relays the intent as an event.
 		const onSubmit = (): void => submit();
 		document.addEventListener("gentle:submit", onSubmit);
+		// Typing is the main activity here, so the field takes focus instead of being clicked first.
+		area?.focus();
 		onCleanup(() => document.removeEventListener("gentle:submit", onSubmit));
 	});
 

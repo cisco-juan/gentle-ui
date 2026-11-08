@@ -1,9 +1,12 @@
 import { For, Match, Show, Switch, createEffect, type Accessor } from "solid-js";
 import type { ExtensionUiResponse } from "@gentle-shell/protocol";
+import { formatChord, isMac } from "../lib/keybindings";
 import type { ChatItem } from "../state/chat";
 import { RichText } from "./RichText";
 import { PermissionCard } from "./PermissionCard";
 import { ToolCard } from "./ToolCard";
+
+const PLATFORM_MAC = isMac(`${navigator.userAgent} ${navigator.platform}`);
 
 type UserItem = Extract<ChatItem, { kind: "user" }>;
 type AssistantItem = Extract<ChatItem, { kind: "assistant" }>;
@@ -31,7 +34,8 @@ export function ChatView(props: {
 				<div class="empty">
 					<h1>gentle shell</h1>
 					<p>
-						Your workspace, your agent. Ask for something, or press <kbd>Ctrl</kbd> <kbd>K</kbd> for the palette.
+						Your workspace, your agent. Ask for something, or press <kbd>{formatChord("Mod+K", PLATFORM_MAC)}</kbd>{" "}
+						for the palette.
 					</p>
 				</div>
 			</Show>
