@@ -361,6 +361,75 @@ export interface MemoryProjectsView {
 	readonly raw: string | null;
 }
 
+/**
+ * Gentle Shell's agent-model profiles: named routing maps (agent -> model, thinking level, tier) kept in
+ * `<config home>/profiles.json`, a file gentle-pi owns.
+ *
+ * The bridge reads and writes it with gentle-pi's own library, so the format never drifts from the
+ * terminal's. `unavailable` says why there is nothing to show (the library could not be loaded, or the
+ * file is not one gentle-pi accepts) and always carries a reason and a message; an empty list is never
+ * composed to stand for either.
+ */
+export type ProfilesState = "ok" | "unavailable";
+
+export type ProfilesFailureReason = "library-missing" | "library-incompatible" | "file-invalid";
+
+/** One agent's route inside a profile. A field that is not set is null, never an empty string. */
+export interface ProfileRoute {
+	readonly agent: string;
+	/** `provider/model`. */
+	readonly model: string | null;
+	readonly thinking: string | null;
+	readonly tier: string | null;
+}
+
+export type ProfileMode = "organic" | "full-delegation";
+
+export interface ProfileView {
+	readonly name: string;
+	readonly mode: ProfileMode;
+	/** True for the global default that new threads start with when no repository pin overrides it. */
+	readonly active: boolean;
+	readonly routes: readonly ProfileRoute[];
+}
+
+/** Where a workspace's new threads get their profile from. */
+export interface ProfileEffective {
+	readonly name: string;
+	readonly source: "pin-local" | "pin-repo" | "active";
+}
+
+export interface ProfilesView {
+	readonly state: ProfilesState;
+	readonly reason: ProfilesFailureReason | null;
+	readonly message: string;
+	readonly configHome: string;
+	/** False while `profiles.json` does not exist yet. */
+	readonly stored: boolean;
+	readonly active: string | null;
+	readonly effective: ProfileEffective | null;
+	readonly profiles: readonly ProfileView[];
+	/** Every agent name any profile routes, orchestrator first, so an editor can offer the full set. */
+	readonly agents: readonly string[];
+	/** Things worth saying: entries the reader dropped, pins that name a profile that is gone. */
+	readonly notes: readonly string[];
+}
+
+/** The orchestrator a profile selects; Pi stores the provider and the model apart. */
+export interface ProfileOrchestrator {
+	readonly provider: string;
+	readonly model: string;
+	readonly thinking: string | null;
+}
+
+export interface ProfilesActivation {
+	readonly view: ProfilesView;
+	/** What the profile routes the orchestrator to, or null when it says nothing about it. */
+	readonly orchestrator: ProfileOrchestrator | null;
+	/** A repository pin that wins over the new default for subagents here, when there is one. */
+	readonly pinnedTo: string | null;
+}
+
 export type ClientMessage =
 	| ({ readonly kind: "open"; readonly id: string } & OpenThreadRequest)
 	| { readonly kind: "close"; readonly threadId: string }
@@ -399,7 +468,23 @@ export type ClientMessage =
 			readonly query: string;
 			readonly limit?: number;
 	  }
-	| { readonly kind: "memory"; readonly id: string; readonly action: "projects" };
+	| { readonly kind: "memory"; readonly id: string; readonly action: "projects" }
+	/** Profiles. Every mutation answers with the whole list as it now is on disk. */
+	| { readonly kind: "profiles"; readonly id: string; readonly action: "list" }
+	| {
+			readonly kind: "profiles";
+			readonly id: string;
+			readonly action: "save";
+			readonly name: string;
+			readonly routes: readonly ProfileRoute[];
+			readonly mode: ProfileMode;
+	  }
+	/** A new profile, empty or copied from `from`. */
+	| { readonly kind: "profiles"; readonly id: string; readonly action: "create"; readonly name: string; readonly from?: string }
+	| { readonly kind: "profiles"; readonly id: string; readonly action: "rename"; readonly name: string; readonly to: string }
+	| { readonly kind: "profiles"; readonly id: string; readonly action: "delete"; readonly name: string }
+	/** Make a profile the global default and set the orchestrator it selects. */
+	| { readonly kind: "profiles"; readonly id: string; readonly action: "activate"; readonly name: string };
 
 export type ServerMessage =
 	| {
@@ -440,6 +525,10 @@ export type ServerMessage =
 			readonly kind: "memory";
 			readonly id: string;
 	  } & MemoryResult)
+	| ({
+			readonly kind: "profiles";
+			readonly id: string;
+	  } & ProfilesResult)
 	| { readonly kind: "error"; readonly id?: string; readonly message: string };
 
 /** One memory answer, tagged with the action that asked for it. */
@@ -447,6 +536,11 @@ export type MemoryResult =
 	| { readonly action: "context"; readonly data: MemoryContextView }
 	| { readonly action: "search"; readonly data: MemorySearchView }
 	| { readonly action: "projects"; readonly data: MemoryProjectsView };
+
+/** One profiles answer, tagged with the action that asked for it. */
+export type ProfilesResult =
+	| { readonly action: "list" | "save" | "create" | "rename" | "delete"; readonly data: ProfilesView }
+	| { readonly action: "activate"; readonly data: ProfilesActivation };
 
 /** One review answer, tagged with the action that asked for it. */
 export type ReviewResult =

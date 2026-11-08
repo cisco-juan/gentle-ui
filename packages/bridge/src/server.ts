@@ -1,10 +1,19 @@
 import { createServer } from "node:http";
 import { randomBytes } from "node:crypto";
 import { WebSocketServer, type WebSocket } from "ws";
-import type { ClientMessage, PiCommand, ServerMessage, SessionSummary } from "@gentle-shell/protocol";
+import type { ClientMessage, PiCommand, ProfilesResult, ServerMessage, SessionSummary } from "@gentle-shell/protocol";
 import { resolveCommand } from "./commands.ts";
 import { gitDiff, gitStatus } from "./git.ts";
 import { memoryContext, memoryProjects, memorySearch, type MemoryOptions } from "./memory.ts";
+import {
+	profilesActivate,
+	profilesCreate,
+	profilesDelete,
+	profilesList,
+	profilesRename,
+	profilesSave,
+	type ProfilesOptions,
+} from "./profiles.ts";
 import { resolvePiEnvironment } from "./pi-environment.ts";
 import {
 	answerConsent,
@@ -37,6 +46,8 @@ export interface BridgeServerOptions {
 	readonly review?: ReviewOptions;
 	/** Engram options, for the same reason: a test points the memory family at a fake MCP server. */
 	readonly memory?: MemoryOptions;
+	/** Where profiles live and which gentle-pi reads them; a test points this at a scratch config home. */
+	readonly profiles?: ProfilesOptions;
 }
 
 export interface BridgeServerHandle {
@@ -133,6 +144,17 @@ export async function startBridgeServer(options: BridgeServerOptions = {}): Prom
 		if (message.kind === "memory") {
 			try {
 				await dispatchMemory(socket, message);
+			} catch (error) {
+				send(socket, { kind: "error", id: message.id, message: errorMessage(error) });
+			}
+			return;
+		}
+
+		// Profiles belong to the user's Gentle Shell configuration, not to a thread; the workspace only
+		// matters for the repository pin that can override the default for new threads here.
+		if (message.kind === "profiles") {
+			try {
+				await dispatchProfiles(socket, message);
 			} catch (error) {
 				send(socket, { kind: "error", id: message.id, message: errorMessage(error) });
 			}
@@ -328,6 +350,35 @@ export async function startBridgeServer(options: BridgeServerOptions = {}): Prom
 			action: "context",
 			data: await memoryContext(workspace, memoryOptions),
 		});
+	}
+
+	async function dispatchProfiles(
+		socket: WebSocket,
+		message: Extract<ClientMessage, { kind: "profiles" }>,
+	): Promise<void> {
+		const profileOptions = options.profiles ?? {};
+		const reply = (answer: ProfilesResult): void => send(socket, { kind: "profiles", id: message.id, ...answer });
+
+		switch (message.action) {
+			case "list":
+				return reply({ action: "list", data: await profilesList(workspace, profileOptions) });
+			case "save":
+				return reply({
+					action: "save",
+					data: await profilesSave(workspace, message.name, message.routes, message.mode, profileOptions),
+				});
+			case "create":
+				return reply({
+					action: "create",
+					data: await profilesCreate(workspace, message.name, message.from, profileOptions),
+				});
+			case "rename":
+				return reply({ action: "rename", data: await profilesRename(workspace, message.name, message.to, profileOptions) });
+			case "delete":
+				return reply({ action: "delete", data: await profilesDelete(workspace, message.name, profileOptions) });
+			case "activate":
+				return reply({ action: "activate", data: await profilesActivate(workspace, message.name, profileOptions) });
+		}
 	}
 
 	async function dispatchWorkspace(

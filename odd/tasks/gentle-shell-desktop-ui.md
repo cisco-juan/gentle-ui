@@ -49,6 +49,11 @@ Quote: "cuando intentamos usar un comando como el /gentle:profile da error o se 
 S10. Everything built so far is audited, and what the audit finds is fixed.
 Quote: "queremos que hagas una verificacion de todo lo creado y crear un plan para mejorar la experiencia y/o arreglar cualquier bug que encuentres."
 
+S11. Profiles must work from the UI, by editing the file Gentle Shell keeps them in if that is the way.
+Quote: "creo que la posible solucion seria modificar el archivo o db que usa gentleshell directamente, puedes revisar el repo para validar como funciona, el plan es que todo funcione desde le la UI"
+Decision (user, 2026-11-08): "use this profile" makes it the global default and opens a new thread that starts with it;
+the open thread is not changed, because binding a session needs Pi's own process.
+
 ## Tasks
 
 T1  [x] Workspace scaffold: git init, pnpm workspace, `apps/desktop` (Tauri v2 + Solid + Vite), `packages/bridge`. S6 — 64eb88d
@@ -90,6 +95,16 @@ T16 [x] Memory buttons no longer stick; permission cards handle editors, IME, ti
     slash suggestions work from the keyboard; sidebar search and button fixed. S10 — 7f7342b, 7f89f6f
     Route: inline. Risk none. Native assess over both: medium, under budget, no review due.
 T17 [x] Housekeeping: T6 checked, Settings copy no longer promises a palette that shipped, this record. S10 — this commit
+
+
+T18 [x] A model switch from the chip names the model with the key Pi reads (`modelId`, not `model`); every switch failed
+    with "Model not found". S11 — adbcc5f. Route: inline. Risk none.
+T19 [ ] Bridge: profiles module over gentle-pi's own library (loaded with jiti), `profiles` protocol messages, backup
+    before the first write, atomic writes, refusal of values its reader would drop. S11 — this commit.
+    Route: inline. Risk items 1 and 3 (writes a file another program owns). Gate pending: independent verifier, then
+    native review. Checked off when both are done.
+T20 [ ] UI: Profiles sheet, composer chip, bare `/gentle:profiles` opens the sheet, "use for new threads". S11
+T21 [ ] Docs and log for the profiles work. S11
 
 ## Log
 
@@ -200,3 +215,29 @@ Open:
   run `/gentle:doctor`, a command that opens a dialog, kill the bridge and Reconnect, expand a running tool card.
 - A native Profiles panel (needs its own spec), exposing the active profile and permission mode over RPC, T9 phase two
   and T10.
+
+L9. 2026-11-08. After the audit the user ran the app and showed the "/gentle:profiles only works in a terminal" notice,
+and asked for profiles to work from the UI. Request, verbatim:
+"tenemos este error, creo que la posible solucion seria modificar el archivo o db que usa gentleshell directamente,
+puedes revisar el repo para validar como funciona, el plan es que todo funcione desde le la UI"
+
+What was found (read from the installed gentle-pi 4.7.0 and Pi 1.5.0, not assumed):
+- Profiles live in `<config home>/profiles.json` (`~/.gentle-shell/gentle-ai/` here): `{kind, version, active, profiles,
+  workflow}`, each profile a map agent -> `{model, thinking, tier}`, `orchestrator` being the main model. Plain JSON, no
+  hashes, no lock. gentle-pi's `lib/agent-profiles.ts` has the whole CRUD plus an atomic write, and its reader drops what
+  it does not recognise without saying so.
+- Node will not strip types under `node_modules`, but Pi ships `jiti` 2.7.0; it resolves from the Pi directory that sits
+  next to gentle-pi (Pi's `exports` hides its package.json and has no CJS main, so resolving through those fails).
+- A running thread freezes its profile at start; the terminal's "Use" binds a session by appending a custom entry from
+  inside the Pi process, cross-checked against memory. Nothing outside the process can do that, and writing the session
+  file by hand would break it. Hence the user's choice above. A repository pin overrides `active` for subagents (never for
+  the orchestrator), so activation reports it.
+- Pi has no RPC to reload settings or extensions; a file edit reaches a thread only through a new one.
+- The bridge module refuses values gentle-pi's reader would silently drop (a model id with a space, an unknown thinking
+  level or tier, an orchestrator model that is not provider/model) and refuses to write over a file it does not accept.
+  The reader's own drops are reported as notes, because the next save removes them. Verified read-only against the real
+  file: 5 profiles of 13 routes each, active `grok-opencode`, 40 ms, file untouched.
+
+Open: per-thread binding needs a gentle-pi verb (for example `/gentle:profiles use <name>`); fallbacks and pin editing are
+not part of this pass; the terminal and the bridge can both write the file and the last writer wins.
+
