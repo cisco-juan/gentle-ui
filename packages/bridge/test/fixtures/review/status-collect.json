@@ -1,0 +1,89 @@
+{
+  "schema": "gentle-ai.review-integration.status/v2",
+  "contract": "gentle-ai.review-integration/v1",
+  "operation": "review.status",
+  "applicability": "current_target",
+  "authority": {
+    "version": "compact-v2",
+    "lineage_id": "review-b005087be055cc9b",
+    "state": "reviewing",
+    "generation": 1,
+    "revision": "sha256:4ffb06712a51a7eded57a27df99d873a1aeb2718467b56ad195b6007a41bef5d"
+  },
+  "action": "stop",
+  "replayability": "manual_action_required",
+  "frozen": {
+    "tier": "medium",
+    "original_changed_lines": 41,
+    "correction_budget": 1,
+    "changed_path_manifest_sha256": "sha256:78196da0104a3ee38b8ea776e092b97e27a2a6a1479568c5d232a6ad552f190e"
+  },
+  "target_identity": "sha256:0db81e730faea096ad63689d6b061ab6385a82b96ee837a2ed50cfb07c0b9eaf",
+  "projection": {
+    "schema": "gentle-ai.review-integration.projection/v1",
+    "kind": "current-changes",
+    "projection": "workspace",
+    "base_tree": "08585692ce06452da6f82ae66b90d98b55536fca",
+    "initial_review_tree": "187438d7d3fbee49dba13a50af1a6af1f1c7c17c",
+    "current_candidate_tree": "187438d7d3fbee49dba13a50af1a6af1f1c7c17c",
+    "paths_digest": "sha256:7cfbd2b47b4dbca6e9c72730e7541272b707ce98b6efead276cf8cbe6a06a53e",
+    "paths": ["packages/bridge/src/review.ts"],
+    "intended_untracked": [],
+    "intended_untracked_proof": "sha256:b97229718d4c7fe50a8892eb474ae5aa6491697bccb400e3e31dbaca4894d2f3",
+    "initial_snapshot_identity": "sha256:220ddc8bcce0e02d6c860ffc421413c44c05292d425be563b46d0c3063c399be",
+    "current_snapshot_identity": "sha256:220ddc8bcce0e02d6c860ffc421413c44c05292d425be563b46d0c3063c399be"
+  },
+  "eligible_untracked_inventory": "sha256:0fc9c89f9fb57a5340cb06a0d61707dbf4d16b8d18d78a55fd8c28d114b47735",
+  "candidates": [],
+  "next_transition": {
+    "kind": "collect",
+    "reason_code": "reviewer_results_required",
+    "collect": {
+      "inputs": [
+        {
+          "name": "reviewer_result",
+          "schema": "https://gentle-ai.dev/schema/review/reviewer/v1",
+          "capture_operation": "review.capture-result",
+          "arguments": [
+            {
+              "name": "lineage",
+              "value": "review-b005087be055cc9b",
+              "token": "--lineage=review-b005087be055cc9b"
+            },
+            {
+              "name": "expected-revision",
+              "value": "sha256:c7406e7ddfdd8489dbc13bef583dc3ead249b2ab55aa12c66296bb1e11112852",
+              "token": "--expected-revision=sha256:c7406e7ddfdd8489dbc13bef583dc3ead249b2ab55aa12c66296bb1e11112852"
+            },
+            {
+              "name": "target",
+              "value": "sha256:0db81e730faea096ad63689d6b061ab6385a82b96ee837a2ed50cfb07c0b9eaf",
+              "token": "--target=sha256:0db81e730faea096ad63689d6b061ab6385a82b96ee837a2ed50cfb07c0b9eaf"
+            },
+            {
+              "name": "lens",
+              "value": "review-reliability",
+              "token": "--lens=review-reliability"
+            },
+            {
+              "name": "order",
+              "value": "0",
+              "token": "--order=0"
+            }
+          ],
+          "artifact_subject": {
+            "schema": "gentle-ai.review-artifact-subject/v1",
+            "subject_hash": "sha256:5745e8fe6636f9fb33433c9bd95b59c362cdc66fc3a896a418930877acd2a5c0",
+            "lineage_id": "review-b005087be055cc9b",
+            "authority_revision": "sha256:c7406e7ddfdd8489dbc13bef583dc3ead249b2ab55aa12c66296bb1e11112852",
+            "target_identity": "sha256:0db81e730faea096ad63689d6b061ab6385a82b96ee837a2ed50cfb07c0b9eaf",
+            "candidate_diff_sha256": "sha256:1ebd9fd69cb0983156570d8fdc4e7fc00f1bbaa17e48eee43ef7f40e8194e1bf",
+            "changed_path_manifest_sha256": "sha256:78196da0104a3ee38b8ea776e092b97e27a2a6a1479568c5d232a6ad552f190e",
+            "lens": "review-reliability",
+            "selected_order": 0
+          }
+        }
+      ]
+    }
+  }
+}

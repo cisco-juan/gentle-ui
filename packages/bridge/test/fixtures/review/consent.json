@@ -1,0 +1,37 @@
+{
+  "schema": "gentle-ai.review-integration.consent/v1",
+  "contract": "gentle-ai.review-integration/v1",
+  "operation": "review.start",
+  "action": "consent_required",
+  "blocking": true,
+  "target_identity": "sha256:0db81e730faea096ad63689d6b061ab6385a82b96ee837a2ed50cfb07c0b9eaf",
+  "projection": "workspace",
+  "risk_level": "medium",
+  "changed_files": 2,
+  "changed_lines": 41,
+  "headline": "Gentle AI can review this change before you call it done.",
+  "reason": "Review can help detect regressions in these changes.",
+  "value": "Reviewing takes a little longer and makes the result safer.",
+  "risk_evidence": [
+    "this change is not purely passive documentation, so it gets one consolidated review.",
+    "an executable change in packages/bridge/src/review.ts"
+  ],
+  "choices": [
+    {
+      "answer": "granted",
+      "label": "Review this change",
+      "effect": "Reviews only this change; later medium- or high-risk changes ask again, and delivery needs separate approval.",
+      "invocation": "gentle-ai review start --contract gentle-ai.review-integration/v1 --cwd /work/repo --target sha256:0db81e730faea096ad63689d6b061ab6385a82b96ee837a2ed50cfb07c0b9eaf --target-evidence v1:current-changes:workspace:08585692ce06452da6f82ae66b90d98b55536fca:187438d7d3fbee49dba13a50af1a6af1f1c7c17c:sha256:7cfbd2b47b4dbca6e9c72730e7541272b707ce98b6efead276cf8cbe6a06a53e --projection workspace --lineage review-b005087be055cc9b --consent granted"
+    },
+    {
+      "answer": "declined",
+      "label": "Skip this time",
+      "effect": "Skips only this change; no review record is created, and future reviews stay enabled.",
+      "invocation": "gentle-ai review start --contract gentle-ai.review-integration/v1 --cwd /work/repo --target sha256:0db81e730faea096ad63689d6b061ab6385a82b96ee837a2ed50cfb07c0b9eaf --target-evidence v1:current-changes:workspace:08585692ce06452da6f82ae66b90d98b55536fca:187438d7d3fbee49dba13a50af1a6af1f1c7c17c:sha256:7cfbd2b47b4dbca6e9c72730e7541272b707ce98b6efead276cf8cbe6a06a53e --projection workspace --lineage review-b005087be055cc9b --consent declined"
+    }
+  ],
+  "off_path": {
+    "note": "To turn reviews off for good, run 'gentle-ai review mode disable'.",
+    "command": "gentle-ai review mode disable"
+  }
+}

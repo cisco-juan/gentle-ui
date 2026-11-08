@@ -5,6 +5,14 @@ import type { ClientMessage, PiCommand, ServerMessage, SessionSummary } from "@g
 import { resolveCommand } from "./commands.ts";
 import { gitDiff, gitStatus } from "./git.ts";
 import { resolvePiEnvironment } from "./pi-environment.ts";
+import {
+	answerConsent,
+	reviewAssess,
+	reviewModeStatus,
+	reviewStart,
+	reviewStatus,
+	type ReviewOptions,
+} from "./review.ts";
 import { listSessions } from "./sessions.ts";
 import { ThreadHost, isDialogRequest } from "./thread-host.ts";
 import { saveUpload } from "./uploads.ts";
@@ -21,6 +29,11 @@ export interface BridgeServerOptions {
 	readonly extension?: string;
 	/** Directory the inspector reads files and git state from. Defaults to the bridge's cwd. */
 	readonly workspace?: string;
+	/**
+	 * Native review options. The provider is an external binary, so this is how a test points the
+	 * review family at a fake one; a packaged bridge leaves it undefined and discovery decides.
+	 */
+	readonly review?: ReviewOptions;
 }
 
 export interface BridgeServerHandle {
@@ -98,6 +111,16 @@ export async function startBridgeServer(options: BridgeServerOptions = {}): Prom
 		if (message.kind === "git" || message.kind === "fs") {
 			try {
 				await dispatchWorkspace(socket, message);
+			} catch (error) {
+				send(socket, { kind: "error", id: message.id, message: errorMessage(error) });
+			}
+			return;
+		}
+
+		// Native review belongs to the workspace, not to a thread: authority has no agent session.
+		if (message.kind === "review") {
+			try {
+				await dispatchReview(socket, message);
 			} catch (error) {
 				send(socket, { kind: "error", id: message.id, message: errorMessage(error) });
 			}
@@ -194,6 +217,52 @@ export async function startBridgeServer(options: BridgeServerOptions = {}): Prom
 		}
 		uploadsHome = resolved;
 		return uploadsHome;
+	}
+
+	/**
+	 * One review answer per action, each already projected by the bridge.
+	 *
+	 * Nothing here synthesizes a token or retries a transition: the panel asks for status, and whatever
+	 * that status offers is the only thing it can act on.
+	 */
+	async function dispatchReview(
+		socket: WebSocket,
+		message: Extract<ClientMessage, { kind: "review" }>,
+	): Promise<void> {
+		// The provider the panel talks to is the binary of the same package Pi is launched from, when the
+		// bridge was told which package that is. An explicit binary always wins over this.
+		const reviewOptions: ReviewOptions = {
+			...(options.review ?? {}),
+			...(options.extension === undefined ? {} : { packageRoot: options.extension }),
+		};
+		// The two actions with a payload are narrowed first, so the rest reads as one three-action family.
+		if (message.action === "consent") {
+			send(socket, {
+				kind: "review",
+				id: message.id,
+				action: "consent",
+				data: await answerConsent(message.invocation, { ...reviewOptions, cwd: workspace }),
+			});
+			return;
+		}
+		if (message.action === "start") {
+			send(socket, {
+				kind: "review",
+				id: message.id,
+				action: "start",
+				data: await reviewStart(workspace, message.tokens, reviewOptions),
+			});
+			return;
+		}
+		if (message.action === "status") {
+			send(socket, { kind: "review", id: message.id, action: "status", data: await reviewStatus(workspace, reviewOptions) });
+			return;
+		}
+		if (message.action === "assess") {
+			send(socket, { kind: "review", id: message.id, action: "assess", data: await reviewAssess(workspace, reviewOptions) });
+			return;
+		}
+		send(socket, { kind: "review", id: message.id, action: "mode", data: await reviewModeStatus(workspace, reviewOptions) });
 	}
 
 	async function dispatchWorkspace(

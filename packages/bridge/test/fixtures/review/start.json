@@ -1,0 +1,40 @@
+{
+  "schema": "gentle-ai.review-integration.start/v2",
+  "contract": "gentle-ai.review-integration/v1",
+  "operation": "review.start",
+  "action": "created",
+  "lenses_required": true,
+  "lineage_id": "review-b005087be055cc9b",
+  "state": "reviewing",
+  "risk_level": "medium",
+  "selected_lenses": ["review-reliability"],
+  "projection": "workspace",
+  "changed_files": 2,
+  "changed_lines": 41,
+  "correction_budget": 1,
+  "risk_reasons": [
+    {
+      "code": "executable_change",
+      "path": "packages/bridge/src/review.ts"
+    }
+  ],
+  "artifact_subjects": [
+    {
+      "schema": "gentle-ai.review-artifact-subject/v1",
+      "subject_hash": "sha256:5745e8fe6636f9fb33433c9bd95b59c362cdc66fc3a896a418930877acd2a5c0",
+      "lineage_id": "review-b005087be055cc9b",
+      "authority_revision": "sha256:c7406e7ddfdd8489dbc13bef583dc3ead249b2ab55aa12c66296bb1e11112852",
+      "target_identity": "sha256:0db81e730faea096ad63689d6b061ab6385a82b96ee837a2ed50cfb07c0b9eaf",
+      "candidate_diff_sha256": "sha256:1ebd9fd69cb0983156570d8fdc4e7fc00f1bbaa17e48eee43ef7f40e8194e1bf",
+      "changed_path_manifest_sha256": "sha256:78196da0104a3ee38b8ea776e092b97e27a2a6a1479568c5d232a6ad552f190e",
+      "lens": "review-reliability",
+      "selected_order": 0
+    }
+  ],
+  "repository_context": {
+    "capability": "review.opaque_repository_context",
+    "handle": "rctx2_5f421ab867067ff58d33611e62fd588d1fb4a5ce29c7064f7af364b910bbbcf7",
+    "revision": "sha256:c7406e7ddfdd8489dbc13bef583dc3ead249b2ab55aa12c66296bb1e11112852",
+    "target_identity": "sha256:0db81e730faea096ad63689d6b061ab6385a82b96ee837a2ed50cfb07c0b9eaf"
+  }
+}

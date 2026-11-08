@@ -1,0 +1,14 @@
+{
+  "schema": "gentle-ai.review-integration.failure/v1",
+  "contract": "gentle-ai.review-integration/v1",
+  "operation": "review.status",
+  "phase": "preflight",
+  "code": "unsupported_contract",
+  "message": "The requested review integration contract is not supported.",
+  "mutation_outcome": "not_started",
+  "authority_applicability": "not_evaluated",
+  "retry_safe": true,
+  "replayability": "not_replayable",
+  "required_inputs": [],
+  "next_action": "correct_request"
+}

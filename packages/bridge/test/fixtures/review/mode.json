@@ -1,0 +1,13 @@
+{
+  "schema": "gentle-ai.review-mode/v1",
+  "operation": "status",
+  "scope": "both",
+  "status": {
+    "schema": "gentle-ai.rdd-mode-status/v1",
+    "global": "on",
+    "clone_local": "off",
+    "effective": "off",
+    "source": "clone_local",
+    "revision": "sha256:6f2348017329fd5a96c65509735324539ed1e90656dfe107372bc3ab174e603f"
+  }
+}

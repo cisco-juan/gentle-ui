@@ -2,6 +2,10 @@ import type {
 	ClientMessage,
 	ExtensionUiResponse,
 	GitStatus,
+	ReviewAssessment,
+	ReviewMode,
+	ReviewStartView,
+	ReviewStatusView,
 	ServerMessage,
 	SessionSummary,
 	WorkspaceFileContent,
@@ -9,6 +13,16 @@ import type {
 } from "@gentle-shell/protocol";
 
 type Listener = (message: ServerMessage) => void;
+
+/** What the Review panel can ask the bridge for; each action answers with its own shape. */
+export type ReviewRequest =
+	| { readonly action: "status" }
+	| { readonly action: "assess" }
+	| { readonly action: "mode" }
+	| { readonly action: "start"; readonly tokens: readonly string[] }
+	| { readonly action: "consent"; readonly invocation: string };
+
+export type ReviewAnswer = ReviewStatusView | ReviewAssessment | ReviewMode | ReviewStartView;
 
 interface Pending {
 	readonly resolve: (value: unknown) => void;
@@ -105,6 +119,26 @@ export class BridgeClient {
 		return this.#request<WorkspaceFileContent>({ kind: "fs", id, action: "read", path });
 	}
 
+	/**
+	 * Native review. One method for the whole family, typed per action, so no component opens a raw
+	 * socket or builds a provider command line of its own.
+	 */
+	review(request: { readonly action: "status" }): Promise<ReviewStatusView>;
+	review(request: { readonly action: "assess" }): Promise<ReviewAssessment>;
+	review(request: { readonly action: "mode" }): Promise<ReviewMode>;
+	review(request: { readonly action: "start"; readonly tokens: readonly string[] }): Promise<ReviewStartView>;
+	review(request: { readonly action: "consent"; readonly invocation: string }): Promise<ReviewStartView>;
+	review(request: ReviewRequest): Promise<ReviewAnswer> {
+		const id = this.#nextId();
+		if (request.action === "start") {
+			return this.#request<ReviewStartView>({ kind: "review", id, action: "start", tokens: request.tokens });
+		}
+		if (request.action === "consent") {
+			return this.#request<ReviewStartView>({ kind: "review", id, action: "consent", invocation: request.invocation });
+		}
+		return this.#request<ReviewAnswer>({ kind: "review", id, action: request.action });
+	}
+
 	close(): void {
 		this.#socket?.close();
 		this.#socket = null;
@@ -153,6 +187,10 @@ export class BridgeClient {
 			return;
 		}
 		if (message.kind === "git" || message.kind === "fs") {
+			this.#settle(message.id, message.data);
+			return;
+		}
+		if (message.kind === "review") {
 			this.#settle(message.id, message.data);
 			return;
 		}

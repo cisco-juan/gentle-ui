@@ -1,4 +1,4 @@
-import { For, Show, createMemo, onCleanup, type JSX } from "solid-js";
+import { For, Show, createMemo, createSignal, onCleanup, type JSX } from "solid-js";
 import "../inspector.css";
 import {
 	INSPECTOR_TABS,
@@ -9,32 +9,56 @@ import {
 	statusGlyph,
 	type ChatControllerLike,
 	type InspectorState,
+	type InspectorTab,
 } from "../state/inspector";
+import { REVIEW_TAB, createReviewPanel } from "../state/review";
+import { ReviewTab } from "./ReviewTab";
 
 /**
  * Right-hand inspector.
  *
  * Four tabs over workspace reads the bridge already performs: git changes with an inline diff, a file
  * tree with a read-only preview, the ODD task lists, and the subagent activity the agent publishes.
- * The panel owns no shell state — it is mounted into the parent's grid and only speaks to the bridge
- * through the chat controller it is given.
+ * The fifth, Review, is native review (RDD) and owns its own state module and scroller. The panel owns
+ * no shell state — it is mounted into the parent's grid and only speaks to the bridge through the chat
+ * controller it is given.
  */
 export function Inspector(props: { chat: ChatControllerLike; onClose?: () => void }): JSX.Element {
 	const inspector = createInspector({ connect: () => props.chat.bridge() });
-	onCleanup(() => inspector.stop());
+	const review = createReviewPanel({ connect: () => props.chat.bridge() });
+	// Review keeps its own switch instead of widening the inspector's tab union: the other four tabs do
+	// not know it exists, and their state stays exactly as it was.
+	const [reviewOpen, setReviewOpen] = createSignal(false);
+	onCleanup(() => {
+		inspector.stop();
+		review.stop();
+	});
+
+	function openTab(id: InspectorTab | "review"): void {
+		setReviewOpen(id === "review");
+		if (id !== "review") {
+			inspector.select(id);
+			return;
+		}
+		void review.refresh();
+	}
+
+	function activeTab(id: InspectorTab | "review"): boolean {
+		return id === "review" ? reviewOpen() : !reviewOpen() && inspector.tab() === id;
+	}
 
 	return (
 		<aside class="inspector" aria-label="Inspector">
 			<header class="inspector-head">
 				<div class="inspector-tabs" role="tablist" aria-label="Inspector tabs">
-					<For each={INSPECTOR_TABS}>
+					<For each={[...INSPECTOR_TABS, REVIEW_TAB]}>
 						{(entry) => (
 							<button
 								type="button"
 								role="tab"
-								class={`inspector-tab${inspector.tab() === entry.id ? " on" : ""}`}
-								aria-selected={inspector.tab() === entry.id}
-								onClick={() => inspector.select(entry.id)}
+								class={`inspector-tab${activeTab(entry.id) ? " on" : ""}`}
+								aria-selected={activeTab(entry.id)}
+								onClick={() => openTab(entry.id)}
 							>
 								{entry.label}
 							</button>
@@ -50,17 +74,20 @@ export function Inspector(props: { chat: ChatControllerLike; onClose?: () => voi
 				</Show>
 			</header>
 
-			<div class="inspector-body">
-				<Show when={inspector.tab() === "changes"}>
+			<div class="inspector-body" classList={{ "for-review": reviewOpen() }}>
+				<Show when={reviewOpen()}>
+					<ReviewTab review={review} />
+				</Show>
+				<Show when={!reviewOpen() && inspector.tab() === "changes"}>
 					<ChangesTab inspector={inspector} />
 				</Show>
-				<Show when={inspector.tab() === "files"}>
+				<Show when={!reviewOpen() && inspector.tab() === "files"}>
 					<FilesTab inspector={inspector} />
 				</Show>
-				<Show when={inspector.tab() === "tasks"}>
+				<Show when={!reviewOpen() && inspector.tab() === "tasks"}>
 					<TasksTab inspector={inspector} />
 				</Show>
-				<Show when={inspector.tab() === "agents"}>
+				<Show when={!reviewOpen() && inspector.tab() === "agents"}>
 					<AgentsTab inspector={inspector} />
 				</Show>
 			</div>

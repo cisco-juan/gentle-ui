@@ -129,6 +129,151 @@ export interface GitStatus {
 	readonly files: readonly GitStatusFile[];
 }
 
+/**
+ * Native review (receipt-driven development), as far as this UI renders it.
+ *
+ * The provider spawns nothing here: `review status` is the only source of truth, and the bridge turns
+ * its JSON into these shapes before the panel sees it. A provider schema bump therefore never reaches
+ * a component. The artefacts under `.git/gentle-ai/review-transactions/` name a lineage; the status of
+ * that lineage is what confirms it, so nothing here is read from disk as authority.
+ */
+export interface ReviewAuthority {
+	/** Authority layout, `compact-v2` on a modern provider. */
+	readonly version: string;
+	readonly lineageId: string;
+	readonly state: string;
+	readonly generation: number;
+	/** Digest of the authority revision this lineage is at. */
+	readonly revision: string;
+}
+
+/** The budget a review froze when it started; it never moves afterwards. */
+export interface ReviewFrozen {
+	readonly tier: string;
+	readonly changedLines: number;
+	readonly correctionBudget: number;
+	readonly changedPathManifestDigest: string;
+}
+
+export type ReviewTransitionKind = "execute" | "collect" | "stop";
+
+/** The step an `execute` transition invites: its tokens are the provider's, never synthesized. */
+export interface ReviewExecuteStep {
+	readonly operation: string;
+	/** The provider's own rendering of the command. Display only; it is never run as a string. */
+	readonly command: string;
+	readonly tokens: readonly string[];
+	readonly lineageId: string | null;
+	readonly targetIdentity: string | null;
+}
+
+/** One artefact an `collect` transition is waiting for; capturing it belongs to a later phase. */
+export interface ReviewCollectInput {
+	readonly name: string;
+	readonly schema: string;
+	readonly captureOperation: string;
+}
+
+export interface ReviewTransition {
+	readonly kind: ReviewTransitionKind;
+	/** The provider's reason code, shown verbatim. */
+	readonly reasonCode: string;
+	readonly execute: ReviewExecuteStep | null;
+	readonly collect: readonly ReviewCollectInput[];
+}
+
+/**
+ * What the Review tab renders.
+ *
+ * `state` says whether the provider answered at all: `empty` means there is no repository to ask
+ * about, `unreadable` means the answer was not the negotiated JSON and `raw` carries it for display.
+ * `emptiness` is narrower: which honest empty state the authority section shows when nothing is
+ * authoritative yet.
+ */
+export interface ReviewStatusView {
+	readonly state: "ok" | "empty" | "unreadable";
+	readonly emptiness: "not-a-repository" | "no-authority" | null;
+	readonly message: string;
+	/** The workspace the panel asked about. */
+	readonly repository: string;
+	readonly contract: string;
+	readonly applicability: string;
+	readonly action: string;
+	readonly targetIdentity: string;
+	readonly projection: string;
+	readonly changedPaths: readonly string[];
+	readonly authority: ReviewAuthority | null;
+	/** True when the authority belongs to an earlier target than the one the provider reports now. */
+	readonly authorityStale: boolean;
+	readonly frozen: ReviewFrozen | null;
+	readonly transition: ReviewTransition | null;
+	/** The untouched answer, present only when it could not be parsed. */
+	readonly raw: string | null;
+}
+
+/** `review assess`: the read-only risk a start would freeze. */
+export interface ReviewAssessment {
+	readonly risk: string;
+	readonly reasons: readonly { readonly code: string; readonly path: string | null }[];
+	readonly changedPaths: number;
+	readonly changedLines: number;
+	readonly candidateKind: string;
+	readonly candidateConsumed: boolean;
+	readonly reviewDue: boolean;
+	readonly reviewDueReason: string;
+}
+
+/** `review mode status`: the user-owned switch, with both sources and the effective answer. */
+export interface ReviewMode {
+	readonly global: string;
+	readonly cloneLocal: string;
+	readonly effective: string;
+	readonly source: string;
+	readonly revision: string;
+}
+
+/** One answer of the blocking consent question; its `invocation` is the exact command to replay. */
+export interface ReviewConsentChoice {
+	readonly answer: string;
+	readonly label: string;
+	readonly effect: string;
+	readonly invocation: string;
+}
+
+export interface ReviewConsent {
+	readonly schema: string;
+	readonly blocking: boolean;
+	readonly targetIdentity: string;
+	readonly projection: string;
+	readonly riskLevel: string;
+	readonly changedFiles: number;
+	readonly changedLines: number;
+	readonly headline: string;
+	readonly reason: string;
+	readonly value: string;
+	readonly riskEvidence: readonly string[];
+	/** Exactly two ordered choices: the provider's answer, or none. */
+	readonly choices: readonly ReviewConsentChoice[];
+	readonly offPath: { readonly note: string; readonly command: string } | null;
+}
+
+/**
+ * The answer to a start: the frozen lineage, the consent question that must be answered first, or
+ * the record that the change was skipped.
+ */
+export interface ReviewStartView {
+	readonly outcome: "started" | "consent" | "declined";
+	readonly consent: ReviewConsent | null;
+	readonly lineageId: string;
+	readonly state: string;
+	readonly riskLevel: string;
+	readonly selectedLenses: readonly string[];
+	readonly changedFiles: number;
+	readonly changedLines: number;
+	readonly correctionBudget: number;
+	readonly message: string;
+}
+
 export type ClientMessage =
 	| ({ readonly kind: "open"; readonly id: string } & OpenThreadRequest)
 	| { readonly kind: "close"; readonly threadId: string }
@@ -151,7 +296,13 @@ export type ClientMessage =
 	| { readonly kind: "git"; readonly id: string; readonly action: "status" }
 	| { readonly kind: "git"; readonly id: string; readonly action: "diff"; readonly path: string }
 	| { readonly kind: "fs"; readonly id: string; readonly action: "tree"; readonly path?: string }
-	| { readonly kind: "fs"; readonly id: string; readonly action: "read"; readonly path: string };
+	| { readonly kind: "fs"; readonly id: string; readonly action: "read"; readonly path: string }
+	/** Native review, always against the bridge's workspace. */
+	| { readonly kind: "review"; readonly id: string; readonly action: "status" | "assess" | "mode" }
+	/** Start a review with the tokens its own status transition carried. */
+	| { readonly kind: "review"; readonly id: string; readonly action: "start"; readonly tokens: readonly string[] }
+	/** Answer the blocking consent question by replaying the chosen invocation. */
+	| { readonly kind: "review"; readonly id: string; readonly action: "consent"; readonly invocation: string };
 
 export type ServerMessage =
 	| {
@@ -184,4 +335,16 @@ export type ServerMessage =
 	| { readonly kind: "fs"; readonly id: string; readonly action: "tree"; readonly data: readonly WorkspaceTreeEntry[] }
 	/** Answer to `{kind:"fs", action:"read"}`. */
 	| { readonly kind: "fs"; readonly id: string; readonly action: "read"; readonly data: WorkspaceFileContent }
+	| ({
+			readonly kind: "review";
+			readonly id: string;
+	  } & ReviewResult)
 	| { readonly kind: "error"; readonly id?: string; readonly message: string };
+
+/** One review answer, tagged with the action that asked for it. */
+export type ReviewResult =
+	| { readonly action: "status"; readonly data: ReviewStatusView }
+	| { readonly action: "assess"; readonly data: ReviewAssessment }
+	| { readonly action: "mode"; readonly data: ReviewMode }
+	| { readonly action: "start"; readonly data: ReviewStartView }
+	| { readonly action: "consent"; readonly data: ReviewStartView };

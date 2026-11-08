@@ -1,0 +1,21 @@
+{
+  "schema": "gentle-ai.review-assessment/v1",
+  "risk": "medium",
+  "reasons": [
+    {
+      "code": "executable_change",
+      "path": "packages/bridge/src/review.ts"
+    },
+    {
+      "code": "public_contract_change"
+    }
+  ],
+  "changed_paths": 2,
+  "changed_lines": 41,
+  "candidate": {
+    "kind": "current-changes",
+    "consumed": false
+  },
+  "review_due": false,
+  "review_due_reason": "under_budget"
+}

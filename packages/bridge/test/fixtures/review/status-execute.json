@@ -1,0 +1,91 @@
+{
+  "schema": "gentle-ai.review-integration.status/v2",
+  "contract": "gentle-ai.review-integration/v1",
+  "operation": "review.status",
+  "applicability": "unrelated",
+  "action": "start",
+  "replayability": "not_replayable",
+  "target_identity": "sha256:0db81e730faea096ad63689d6b061ab6385a82b96ee837a2ed50cfb07c0b9eaf",
+  "projection": {
+    "schema": "gentle-ai.review-integration.projection/v1",
+    "kind": "current-changes",
+    "projection": "workspace",
+    "base_tree": "08585692ce06452da6f82ae66b90d98b55536fca",
+    "initial_review_tree": "187438d7d3fbee49dba13a50af1a6af1f1c7c17c",
+    "current_candidate_tree": "187438d7d3fbee49dba13a50af1a6af1f1c7c17c",
+    "paths_digest": "sha256:7cfbd2b47b4dbca6e9c72730e7541272b707ce98b6efead276cf8cbe6a06a53e",
+    "paths": ["packages/bridge/src/review.ts", "packages/bridge/test/review.test.ts"],
+    "intended_untracked": [],
+    "intended_untracked_proof": "sha256:b97229718d4c7fe50a8892eb474ae5aa6491697bccb400e3e31dbaca4894d2f3",
+    "initial_snapshot_identity": "sha256:220ddc8bcce0e02d6c860ffc421413c44c05292d425be563b46d0c3063c399be",
+    "current_snapshot_identity": "sha256:220ddc8bcce0e02d6c860ffc421413c44c05292d425be563b46d0c3063c399be"
+  },
+  "eligible_untracked_inventory": "sha256:0fc9c89f9fb57a5340cb06a0d61707dbf4d16b8d18d78a55fd8c28d114b47735",
+  "repair": {
+    "schema": "gentle-ai.review-authority-repair-assessment/v1",
+    "status": "unsupported",
+    "counts": {
+      "lineages": 0,
+      "compact_lineages": 0,
+      "legacy_lineages": 0,
+      "events": 0,
+      "bytes": 0,
+      "eligible_candidates": 0,
+      "unsupported_lineages": 0,
+      "conflicts": 0
+    },
+    "supported_operations": ["review/complete-fix", "review/validate-fix"],
+    "authorization_schema": "gentle-ai.review-repair-authorization/v1"
+  },
+  "candidates": [],
+  "next_transition": {
+    "kind": "execute",
+    "reason_code": "fresh_target_ready",
+    "execute": {
+      "operation": "review.start",
+      "command": "gentle-ai review start --cwd=/work/repo --contract=gentle-ai.review-integration/v1 --target=sha256:0db81e730faea096ad63689d6b061ab6385a82b96ee837a2ed50cfb07c0b9eaf --target-evidence=v1:current-changes:workspace:08585692ce06452da6f82ae66b90d98b55536fca:187438d7d3fbee49dba13a50af1a6af1f1c7c17c:sha256:7cfbd2b47b4dbca6e9c72730e7541272b707ce98b6efead276cf8cbe6a06a53e --projection=workspace --lineage=review-b005087be055cc9b",
+      "arguments": [
+        {
+          "name": "cwd",
+          "value": "/work/repo",
+          "token": "--cwd=/work/repo"
+        },
+        {
+          "name": "contract",
+          "value": "gentle-ai.review-integration/v1",
+          "token": "--contract=gentle-ai.review-integration/v1"
+        },
+        {
+          "name": "target",
+          "value": "sha256:0db81e730faea096ad63689d6b061ab6385a82b96ee837a2ed50cfb07c0b9eaf",
+          "token": "--target=sha256:0db81e730faea096ad63689d6b061ab6385a82b96ee837a2ed50cfb07c0b9eaf"
+        },
+        {
+          "name": "target-evidence",
+          "value": "v1:current-changes:workspace:08585692ce06452da6f82ae66b90d98b55536fca:187438d7d3fbee49dba13a50af1a6af1f1c7c17c:sha256:7cfbd2b47b4dbca6e9c72730e7541272b707ce98b6efead276cf8cbe6a06a53e",
+          "token": "--target-evidence=v1:current-changes:workspace:08585692ce06452da6f82ae66b90d98b55536fca:187438d7d3fbee49dba13a50af1a6af1f1c7c17c:sha256:7cfbd2b47b4dbca6e9c72730e7541272b707ce98b6efead276cf8cbe6a06a53e"
+        },
+        {
+          "name": "projection",
+          "value": "workspace",
+          "token": "--projection=workspace"
+        },
+        {
+          "name": "lineage",
+          "value": "review-b005087be055cc9b",
+          "token": "--lineage=review-b005087be055cc9b"
+        }
+      ],
+      "preconditions": [
+        {
+          "name": "target_identity",
+          "value": "sha256:0db81e730faea096ad63689d6b061ab6385a82b96ee837a2ed50cfb07c0b9eaf"
+        }
+      ],
+      "binding": {
+        "lineage_id": "review-b005087be055cc9b",
+        "target_identity": "sha256:0db81e730faea096ad63689d6b061ab6385a82b96ee837a2ed50cfb07c0b9eaf"
+      }
+    }
+  }
+}

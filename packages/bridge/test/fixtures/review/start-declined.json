@@ -1,0 +1,19 @@
+{
+  "operation": "review/start",
+  "action": "declined",
+  "lenses_required": false,
+  "lineage_id": "",
+  "state": "",
+  "risk_level": "medium",
+  "selected_lenses": [],
+  "lens_bindings": [],
+  "projection": "workspace",
+  "target_identity": "sha256:0db81e730faea096ad63689d6b061ab6385a82b96ee837a2ed50cfb07c0b9eaf",
+  "changed_files": 2,
+  "changed_lines": 41,
+  "correction_budget": 0,
+  "risk_evidence": [
+    "this change is not purely passive documentation, so it gets one consolidated review."
+  ],
+  "consent": "declined_this_candidate"
+}

@@ -1,0 +1,328 @@
+/* Native review panel. Same tone language as the rest of the inspector: surfaces differ by tone,
+ * a hairline only where two blocks of the same tone meet, and the accent is spent on one action. */
+
+/* The panel brings its own scroller so its mode line and refresh stay put; other tabs keep the
+ * inspector body's scroller untouched. */
+.inspector-body.for-review {
+	overflow: hidden;
+	padding: 0;
+}
+
+.review {
+	display: flex;
+	flex-direction: column;
+	height: 100%;
+	min-height: 0;
+}
+
+.review-head {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	flex: 0 0 auto;
+	padding: 4px 6px 6px;
+}
+
+.review-mode {
+	flex: 1 1 auto;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	padding: 2px 7px;
+	border-radius: 6px;
+	background: var(--surface-2);
+	font-family: var(--mono);
+	font-size: 10.5px;
+	color: var(--text-soft);
+}
+
+.review-mode.on {
+	background: color-mix(in srgb, var(--ok) 14%, transparent);
+	color: var(--ok);
+}
+
+.review-mode.off {
+	color: var(--muted);
+}
+
+.review-scroll {
+	flex: 1 1 auto;
+	min-height: 0;
+	overflow-y: auto;
+	overscroll-behavior: contain;
+	padding: 0 6px 12px;
+	scrollbar-width: thin;
+	scrollbar-color: var(--surface-3) transparent;
+}
+
+.review-scroll::-webkit-scrollbar {
+	width: 8px;
+}
+
+.review-scroll::-webkit-scrollbar-thumb {
+	background: var(--surface-3);
+	border-radius: 8px;
+	border: 2px solid transparent;
+	background-clip: content-box;
+}
+
+.review-notice {
+	margin: 0;
+	padding: 2px 6px 6px;
+	font-size: 11px;
+	line-height: 1.5;
+	color: var(--text-soft);
+}
+
+.review-block {
+	padding: 7px 6px 9px;
+}
+
+/* `<Show>` renders markers, not elements, so element siblings stay adjacent for spacing. */
+.review-block > * + * {
+	margin-top: 6px;
+}
+
+.review-title {
+	margin: 0 0 5px;
+	font-family: var(--mono);
+	font-size: 9.5px;
+	font-weight: 500;
+	text-transform: uppercase;
+	letter-spacing: 0.6px;
+	color: var(--muted);
+}
+
+/* Rows are read, not tabulated: a narrow label column, values that wrap anywhere. */
+.review-rows {
+	display: grid;
+	grid-template-columns: 92px minmax(0, 1fr);
+	gap: 2px 8px;
+	margin: 0;
+}
+
+.review-rows + .review-rows {
+	margin-top: 6px;
+}
+
+.review-rows dt {
+	font-size: 10.5px;
+	color: var(--muted);
+}
+
+.review-rows dd {
+	margin: 0;
+	font-size: 11.5px;
+	color: var(--text-soft);
+	overflow-wrap: anywhere;
+}
+
+.review-rows dd.mono {
+	font-family: var(--mono);
+	font-size: 10.5px;
+}
+
+.review-raw {
+	margin: 0;
+	padding: 6px 7px;
+	max-height: 220px;
+	overflow: auto;
+	border-radius: 6px;
+	background: var(--surface);
+	font-family: var(--mono);
+	font-size: 10.5px;
+	line-height: 1.45;
+	color: var(--text-soft);
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+}
+
+.review-paths,
+.review-evidence {
+	margin: 6px 0 0;
+	padding: 0;
+	list-style: none;
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+}
+
+.review-paths li {
+	font-size: 10.5px;
+	color: var(--muted);
+	overflow-wrap: anywhere;
+}
+
+.review-evidence li {
+	position: relative;
+	padding-left: 11px;
+	font-size: 11px;
+	line-height: 1.45;
+	color: var(--muted);
+	overflow-wrap: anywhere;
+}
+
+.review-evidence li::before {
+	content: "·";
+	position: absolute;
+	left: 2px;
+	color: var(--surface-3);
+}
+
+.review-evidence .review-path {
+	color: var(--text-soft);
+}
+
+.review-transition {
+	display: flex;
+	align-items: baseline;
+	gap: 7px;
+	min-width: 0;
+}
+
+.review-kind {
+	flex: 0 0 auto;
+	font-family: var(--mono);
+	font-size: 9.5px;
+	text-transform: uppercase;
+	letter-spacing: 0.5px;
+	color: var(--text-soft);
+}
+
+.review-kind.collect {
+	color: var(--warn);
+}
+
+.review-kind.stop {
+	color: var(--muted);
+}
+
+.review-reason {
+	flex: 1 1 auto;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	font-size: 10.5px;
+	color: var(--muted);
+}
+
+.review-note {
+	margin: 6px 0 0;
+	font-size: 10.5px;
+	line-height: 1.45;
+	color: var(--muted);
+}
+
+.review-warning {
+	margin: 6px 0 0;
+	font-size: 11px;
+	line-height: 1.45;
+	color: var(--warn);
+	overflow-wrap: anywhere;
+}
+
+/* The one primary action of the panel. */
+.review-primary {
+	width: 100%;
+	margin-top: 8px;
+	padding: 7px 10px;
+	border-radius: 8px;
+	background: var(--accent-dim);
+	color: var(--accent);
+	font-size: 12px;
+	font-weight: 500;
+}
+
+.review-primary:hover:not(:disabled) {
+	background: color-mix(in srgb, var(--accent) 24%, transparent);
+}
+
+.review-primary:disabled {
+	opacity: 0.55;
+	cursor: default;
+}
+
+/* ---------- consent card ---------- */
+
+.review-consent {
+	margin: 8px 0 0;
+	padding: 11px;
+	border-radius: 10px;
+	background: var(--surface);
+}
+
+.review-headline {
+	margin: 0 0 5px;
+	font-size: 12.5px;
+	font-weight: 500;
+	line-height: 1.35;
+	color: var(--text);
+}
+
+.review-reason,
+.review-value {
+	margin: 0 0 4px;
+	font-size: 11.5px;
+	line-height: 1.5;
+	color: var(--text-soft);
+}
+
+.review-value {
+	color: var(--muted);
+}
+
+.review-consent .review-rows {
+	margin-top: 8px;
+}
+
+.review-choices {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	margin-top: 9px;
+}
+
+.review-choice {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	width: 100%;
+	padding: 7px 9px;
+	border-radius: 8px;
+	background: var(--surface-2);
+	text-align: left;
+}
+
+.review-choice:hover:not(:disabled) {
+	background: var(--surface-3);
+}
+
+.review-choice:disabled {
+	opacity: 0.55;
+	cursor: default;
+}
+
+.review-choice.primary {
+	background: var(--accent-dim);
+}
+
+.review-choice.primary:hover:not(:disabled) {
+	background: color-mix(in srgb, var(--accent) 24%, transparent);
+}
+
+.review-choice-label {
+	font-size: 12px;
+	color: var(--text);
+}
+
+.review-choice.primary .review-choice-label {
+	color: var(--accent);
+}
+
+.review-choice-effect {
+	font-size: 10.5px;
+	line-height: 1.4;
+	color: var(--muted);
+}
