@@ -5,7 +5,7 @@ pinned npm dependencies (`@earendil-works/pi-coding-agent`, `gentle-pi`), never 
 releases flow in as version bumps. The UI is a Tauri v2 shell (system webview) around a Vite frontend,
 with a Node bridge that drives the `pi` agent process.
 
-Status: T1, T2 and T4 done. Bridge speaks to `pi --mode rpc` over a tokenised loopback WebSocket and
+Status: T1, T2, T3 and T4 done. Bridge speaks to `pi --mode rpc` over a tokenised loopback WebSocket and
 re-answers extension dialogs; 7 tests green against the real binary. See `docs/architecture.md`.
 
 ## Specs
@@ -43,7 +43,9 @@ not the branding, as the reference.
 
 T1  [x] Workspace scaffold: git init, pnpm workspace, `apps/desktop` (Tauri v2 + Solid + Vite), `packages/bridge`. S6 — 64eb88d
 T2  [x] Bridge: spawn `pi --mode rpc`, JSONL framing, command allowlist, event fan-out, extension dialogs. S1 — 3f87bac
-T3  Session and project model: list, create, switch, search threads; sidebar navigation. S1 S3 S7
+T3  [x] Session and project model: list, create, switch threads; sidebar navigation. S1 S3 S7 — 67b2f6c
+    Search across threads is still pending (tracked with the palette task). The bridge indexes the
+    session directory because Pi has no list-sessions command: 75 real sessions listed in ~185 ms.
 T4  [x] Chat view: streaming messages, collapsible tool cards, inline permission approvals, composer. S1 S3 — a033bb3
     Verified end to end: a prompt typed in the UI ran bash, rendered the tool card with its result,
     streamed the assistant reply, and committed it with model and cost. Screenshot capture in the
@@ -73,3 +75,15 @@ instead of forking it.
 L3. "para confirmar, con estas herramientas sigue siendo compatible con windows, linux y mac?" — raises S6.
 Environment verified: webkit2gtk-4.1 2.54.2, gtk+-3.0 3.24.52, libsoup3, librsvg, openssl, base-devel all
 present on the Linux host; rustup installing in the background.
+
+L4. Verification of T4 (chat) and T3 (sessions), observed through the DOM because headless screenshot
+capture on this machine returns uniform frames even for a trivial HTTP page — an environment defect,
+not an app defect (elementFromPoint, computed colours and layout rects are all correct).
+- T4: a prompt typed in the UI ran `bash cat package.json`, rendered the tool card with `done · 7ms`,
+  streamed the reply, and committed it with model and cost.
+- T3: 75 real sessions listed in the rail grouped by project with title and relative time; clicking a
+  row switched the thread, replayed 4 history bubbles, marked the row active, with no console errors.
+- Bridge-level probe: `switch_session` answered `ok` in 77 ms and `get_messages` returned 243 messages
+  in 37 ms on the largest project session.
+Known gap from this slice: the thread the app opens on connect is a fresh session, so no rail row is
+active until the first prompt creates its file.
