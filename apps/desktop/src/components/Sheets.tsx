@@ -3,7 +3,7 @@ import { formatChord, isMac } from "../lib/keybindings";
 import { Icon } from "./Icon";
 
 /** Centered sheet used by the settings and shortcut views. */
-export function Sheet(props: { title: string; onClose: () => void; children: JSX.Element }) {
+export function Sheet(props: { title: string; onClose: () => void; children: JSX.Element; wide?: boolean }) {
 	let dialog: HTMLDivElement | undefined;
 	// Focus moves into the sheet, so Escape reaches the keymap as a close instead of landing in the
 	// composer, where it would interrupt the agent behind a sheet the reader is looking at.
@@ -12,7 +12,7 @@ export function Sheet(props: { title: string; onClose: () => void; children: JSX
 	return (
 		<div class="sheet-backdrop" onClick={() => props.onClose()}>
 			<div
-				class="sheet"
+				class={props.wide === true ? "sheet wide" : "sheet"}
 				ref={dialog}
 				role="dialog"
 				aria-modal="true"

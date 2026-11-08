@@ -1,7 +1,7 @@
 import { batch, createSignal, type Accessor } from "solid-js";
 import type { ExtensionUiRequest, ExtensionUiResponse, ServerMessage, SessionSummary, UploadedFile } from "@gentle-shell/protocol";
 import { BridgeClient } from "../lib/bridge";
-import { checkCommand, unknownCommandNotice } from "../lib/commands";
+import { checkCommand, shellAction, unknownCommandNotice } from "../lib/commands";
 import { setModelParams } from "../lib/models";
 import { readCachedThreads, writeCachedThreads, type TextStorage } from "../lib/thread-cache";
 import { answerLabel } from "../lib/permission";
@@ -83,6 +83,8 @@ export interface ChatController {
 	notify(text: string, tone?: "info" | "warning" | "error"): void;
 	loadModels(): Promise<void>;
 	switchModel(provider: string, modelId: string): Promise<void>;
+	/** Like `switchModel`, but a refusal rejects instead of becoming a notice, for callers that report it themselves. */
+	selectModel(provider: string, modelId: string): Promise<void>;
 	runCommand(name: string): Promise<void>;
 	setPermissionMode(mode: string): Promise<void>;
 }
@@ -495,6 +497,11 @@ export function createChatController(options: { url: string; cwd: string }): Cha
 		// Every path that can start a prompt ends here — composer, palette, chips — so this is the one
 		// place that keeps a terminal-only command from leaving and coming back as "requires TUI mode".
 		const firstLine = message.split("\n")[0] ?? "";
+		// Bare /gentle:profiles is a terminal screen; the shell answers it with its own sheet.
+		if (shellAction(firstLine) === "profiles") {
+			document.dispatchEvent(new CustomEvent("gentle:open-profiles"));
+			return;
+		}
 		if (firstLine.startsWith("/")) {
 			const verdict = checkCommand(firstLine);
 			if (!verdict.runnable) {
@@ -791,11 +798,15 @@ function errorText(error: unknown): string {
 		}
 	}
 
+	async function selectModel(provider: string, modelId: string): Promise<void> {
+		if (!client || !threadId) throw new Error("the agent is not connected");
+		await client.command(threadId, "set_model", setModelParams(provider, modelId));
+		setModel(modelId);
+	}
+
 	async function switchModel(provider: string, modelId: string): Promise<void> {
-		if (!client || !threadId) return;
 		try {
-			await client.command(threadId, "set_model", setModelParams(provider, modelId));
-			setModel(modelId);
+			await selectModel(provider, modelId);
 		} catch (error) {
 			append({ kind: "notice", id: nextId(), text: errorText(error), tone: "error" });
 		}
@@ -858,6 +869,7 @@ function errorText(error: unknown): string {
 		notify,
 		loadModels,
 		switchModel,
+		selectModel,
 		runCommand,
 		setPermissionMode,
 	};

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { checkCommand, describeCommand, isRunnableCommand, unknownCommandNotice } from "./commands.ts";
+import { checkCommand, describeCommand, isRunnableCommand, shellAction, unknownCommandNotice } from "./commands.ts";
 
 test("a terminal overlay is recognised and named", () => {
 	const verdict = checkCommand("/gentle:agents");
@@ -79,4 +79,22 @@ test("text that only starts with a slash is forwarded, not corrected", () => {
 
 test("nothing is flagged before the agent has listed its commands", () => {
 	assert.equal(unknownCommandNotice("/gentle:profile", []), null);
+});
+
+test("bare /gentle:profiles is answered by the shell's own sheet, never sent to the agent", () => {
+	assert.equal(shellAction("/gentle:profiles"), "profiles");
+	assert.equal(shellAction("  /gentle:profiles  "), "profiles");
+	assert.equal(shellAction("/GENTLE:PROFILES"), "profiles");
+});
+
+test("the profile verbs are not the sheet: they keep going to the agent", () => {
+	assert.equal(shellAction("/gentle:profiles export alpha"), null);
+	assert.equal(shellAction("/gentle:profiles clear"), null);
+	assert.equal(checkCommand("/gentle:profiles export alpha").runnable, true);
+});
+
+test("other lines are not shell actions", () => {
+	assert.equal(shellAction("/gentle:profile"), null);
+	assert.equal(shellAction("/gentle:doctor"), null);
+	assert.equal(shellAction("hello /gentle:profiles"), null);
 });

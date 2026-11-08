@@ -4,6 +4,7 @@ import { describeCommand } from "../lib/commands";
 import { cycle } from "../lib/menu";
 import { SkeletonLines } from "./Skeleton";
 import { Icon } from "./Icon";
+import type { ProfilesView } from "@gentle-shell/protocol";
 import type { Attachment } from "../lib/attachments";
 import { liveChat } from "../state/chat";
 
@@ -28,6 +29,11 @@ export function Composer(props: {
 	onSwitchModel: (provider: string, id: string) => void;
 	onRunCommand: (name: string) => void;
 	onPermissionMode: (mode: string) => void;
+	/** The profiles file as the bridge last read it, or null before the first answer. */
+	profiles: () => ProfilesView | null;
+	/** Make a profile the default and open a new thread that starts with it. */
+	onUseProfile: (name: string) => void;
+	onManageProfiles: () => void;
 }) {
 	const [text, setText] = createSignal("");
 	const [menu, setMenu] = createSignal<Menu>(null);
@@ -63,8 +69,6 @@ export function Composer(props: {
 		const all = props.models();
 		return needle.length === 0 ? all : all.filter((entry) => `${entry.provider}/${entry.id}`.toLowerCase().includes(needle));
 	});
-
-	const commandsMatching = (needle: string) => props.commands().filter((command) => command.name.toLowerCase().includes(needle));
 
 	function rank(name: string, needle: string): number {
 		const lower = name.toLowerCase();
@@ -342,20 +346,35 @@ export function Composer(props: {
 						</button>
 						<Show when={menu() === "profile"}>
 							<div class="popover">
-								<For each={commandsMatching("profile")} fallback={<p class="popover-empty">This agent exposes no profile command.</p>}>
-									{(command) => (
-										<button
-											class="popover-row"
-											onClick={() => {
-												props.onRunCommand(command.name);
-												setMenu(null);
-											}}
-										>
-											<span class="mono">/{command.name}</span>
-											<span class="muted">{command.description}</span>
-										</button>
-									)}
-								</For>
+								<Show
+									when={props.profiles()?.state === "ok"}
+									fallback={<p class="popover-empty">{props.profiles()?.message || "Profiles are not loaded yet."}</p>}
+								>
+									<For each={props.profiles()?.profiles ?? []} fallback={<p class="popover-empty">No profiles yet.</p>}>
+										{(profile) => (
+											<button
+												class="popover-row"
+												title="Make it the default and open a new thread with it"
+												onClick={() => {
+													props.onUseProfile(profile.name);
+													setMenu(null);
+												}}
+											>
+												<span class="mono">{profile.name}</span>
+												<span class="muted">{profile.active ? "default" : "use for new threads"}</span>
+											</button>
+										)}
+									</For>
+								</Show>
+								<button
+									class="popover-row"
+									onClick={() => {
+										props.onManageProfiles();
+										setMenu(null);
+									}}
+								>
+									<span>Manage profiles…</span>
+								</button>
 							</div>
 						</Show>
 					</div>

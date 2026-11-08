@@ -37,6 +37,11 @@ class FakeSocket {
 		this.#emit("open");
 	}
 
+	/** The bridge sends one message. */
+	message(payload: unknown): void {
+		for (const handler of this.#handlers.get("message") ?? []) handler({ data: JSON.stringify(payload) });
+	}
+
 	/** The connection ends without the client asking: the bridge died or the network went. */
 	drop(): void {
 		this.readyState = FakeSocket.CLOSED;
@@ -103,4 +108,24 @@ test("a listener that is removed hears nothing", async () => {
 	stop();
 	socket.drop();
 	assert.equal(closed, 0);
+});
+
+test("a profiles answer settles the request that asked for it", async () => {
+	const { client, socket } = await opened();
+	const waiting = client.profiles({ action: "list" });
+	const sent = JSON.parse(socket.sent[0] as string) as { id: string; kind: string; action: string };
+	assert.equal(sent.kind, "profiles");
+	assert.equal(sent.action, "list");
+
+	socket.message({ kind: "profiles", id: sent.id, action: "list", data: { state: "ok", profiles: [] } });
+	assert.deepEqual(await waiting, { state: "ok", profiles: [] });
+});
+
+test("a refused profiles change rejects with the bridge's message", async () => {
+	const { client, socket } = await opened();
+	const waiting = client.profiles({ action: "create", name: "alpha" });
+	const sent = JSON.parse(socket.sent[0] as string) as { id: string };
+
+	socket.message({ kind: "error", id: sent.id, message: "Profile already exists: alpha." });
+	await assert.rejects(waiting, /already exists/);
 });

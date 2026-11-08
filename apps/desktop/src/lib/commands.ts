@@ -67,7 +67,7 @@ const COMMANDS: readonly CommandDescription[] = [
 		name: "gentle:profiles",
 		kind: "terminal",
 		note: "the bare command opens the fullscreen models screen",
-		surface: "the model chip in the composer",
+		surface: "the Profiles sheet",
 		safeArgs: ["export", "import", "publish", "clear", "export-routing", "restore-routing"],
 	},
 	{
@@ -212,4 +212,20 @@ function editDistance(left: string, right: string): number {
 		previous = current;
 	}
 	return previous[right.length] ?? 0;
+}
+
+export type ShellAction = "profiles";
+
+/**
+ * A line the shell answers with a screen of its own instead of sending it to the agent.
+ *
+ * Bare `/gentle:profiles` opens a fullscreen terminal screen that cannot run over RPC, so the shell
+ * offers the same job as a sheet. With a verb (`export`, `clear`, ...) the line is ordinary agent work and
+ * is not an action.
+ */
+export function shellAction(line: string): ShellAction | null {
+	const trimmed = line.trim();
+	if (!trimmed.startsWith("/")) return null;
+	const [name = "", ...rest] = trimmed.slice(1).split(/\s+/);
+	return name.toLowerCase() === "gentle:profiles" && rest.length === 0 ? "profiles" : null;
 }

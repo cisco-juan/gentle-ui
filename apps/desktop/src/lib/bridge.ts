@@ -5,6 +5,10 @@ import type {
 	MemoryContextView,
 	MemoryProjectsView,
 	MemorySearchView,
+	ProfileMode,
+	ProfileRoute,
+	ProfilesActivation,
+	ProfilesView,
 	ReviewAssessment,
 	ReviewMode,
 	ReviewStartView,
@@ -35,6 +39,17 @@ export type MemoryRequest =
 	| { readonly action: "projects" };
 
 export type MemoryAnswer = MemoryContextView | MemorySearchView | MemoryProjectsView;
+
+/** What the Profiles sheet can ask for. Every change answers with the whole list as it now is on disk. */
+export type ProfilesRequest =
+	| { readonly action: "list" }
+	| { readonly action: "save"; readonly name: string; readonly routes: readonly ProfileRoute[]; readonly mode: ProfileMode }
+	| { readonly action: "create"; readonly name: string; readonly from?: string }
+	| { readonly action: "rename"; readonly name: string; readonly to: string }
+	| { readonly action: "delete"; readonly name: string }
+	| { readonly action: "activate"; readonly name: string };
+
+export type ProfilesAnswer = ProfilesView | ProfilesActivation;
 
 interface Pending {
 	readonly resolve: (value: unknown) => void;
@@ -188,6 +203,17 @@ export class BridgeClient {
 		return this.#request<MemoryAnswer>({ kind: "memory", id, action: request.action });
 	}
 
+	/**
+	 * Gentle Shell's profiles file, read and written by the bridge with gentle-pi's own library. A change
+	 * the bridge refuses (a duplicate name, deleting the default) rejects with its message.
+	 */
+	profiles(request: { readonly action: "activate"; readonly name: string }): Promise<ProfilesActivation>;
+	profiles(request: Exclude<ProfilesRequest, { readonly action: "activate" }>): Promise<ProfilesView>;
+	profiles(request: ProfilesRequest): Promise<ProfilesAnswer> {
+		const id = this.#nextId();
+		return this.#request<ProfilesAnswer>({ kind: "profiles", id, ...request });
+	}
+
 	close(): void {
 		this.#closing = true;
 		try {
@@ -249,6 +275,10 @@ export class BridgeClient {
 			return;
 		}
 		if (message.kind === "memory") {
+			this.#settle(message.id, message.data);
+			return;
+		}
+		if (message.kind === "profiles") {
 			this.#settle(message.id, message.data);
 			return;
 		}

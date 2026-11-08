@@ -1,24 +1,26 @@
-import { Show, createMemo, createSignal, onCleanup, onMount } from "solid-js";
+import { Show, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
 import { ChatView } from "./components/ChatView";
 import { Composer } from "./components/Composer";
 import { Inspector } from "./components/Inspector";
 import { Palette, type PaletteGroup } from "./components/Palette";
+import { ProfilesSheet } from "./components/ProfilesSheet";
 import { SettingsSheet, ShortcutsSheet } from "./components/Sheets";
 import { Sidebar } from "./components/Sidebar";
 import { Splitter } from "./components/Splitter";
 import { StatusBar } from "./components/StatusBar";
 import { DEV_BRIDGE_URL, resolveBridgeUrl } from "./lib/bridge-endpoint";
 import { BINDINGS, createKeymap, isMac, type KeyEventLike } from "./lib/keybindings";
-import { describeCommand } from "./lib/commands";
+import { describeCommand, shellAction } from "./lib/commands";
 import { gridTemplate } from "./lib/layout";
 import { folderLabel, relativeTime } from "./lib/threads";
 import { createChatController } from "./state/chat";
 import { createLayout } from "./state/layout";
+import { createProfilesPanel } from "./state/profiles";
 
 const PROJECT_LABEL = import.meta.env.VITE_PROJECT_LABEL ?? "";
 const MAC = isMac(`${navigator.userAgent} ${navigator.platform}`);
 
-type Sheet = "settings" | "shortcuts" | null;
+type Sheet = "settings" | "shortcuts" | "profiles" | null;
 type PaletteMode = "everything" | "threads" | null;
 
 export default function App() {
@@ -34,6 +36,26 @@ export default function App() {
 	const [sheet, setSheet] = createSignal<Sheet>(null);
 	const [palette, setPalette] = createSignal<PaletteMode>(null);
 	const layout = createLayout();
+
+	// Profiles live in a file the bridge owns; the sheet and the composer chip both read the one panel.
+	const profiles = createProfilesPanel({
+		connect: () => chat.bridge(),
+		newThread: () => chat.newThread(),
+		setModel: (provider, modelId) => chat.selectModel(provider, modelId),
+		setThinking: async (level) => {
+			await chat.invoke("set_thinking_level", { level });
+		},
+	});
+	onCleanup(profiles.stop);
+	// The chip names the profile new threads start with, so it is read as soon as there is a bridge to ask.
+	createEffect(() => {
+		if (chat.connection() === "connected") void profiles.refresh();
+	});
+	const openProfiles = (): void => {
+		setPalette(null);
+		setSheet("profiles");
+		void profiles.refresh();
+	};
 
 	// A handle for inspecting the running shell from the console; development builds only.
 	if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__chat = chat;
@@ -51,6 +73,9 @@ export default function App() {
 			}
 			await chat.connect();
 		})();
+		// Bare /gentle:profiles is answered here: the terminal screen it opens cannot run over RPC.
+		document.addEventListener("gentle:open-profiles", openProfiles);
+		onCleanup(() => document.removeEventListener("gentle:open-profiles", openProfiles));
 	});
 
 	/** Hand the keyboard back to the composer: closing an overlay should not leave typing going nowhere. */
@@ -74,6 +99,7 @@ export default function App() {
 			title: "Actions",
 			items: [
 				{ id: "new-thread", label: "New thread", hint: "start a clean session", run: () => void chat.newThread() },
+				{ id: "profiles", label: "Profiles", hint: "manage and switch", run: openProfiles },
 				{ id: "settings", label: "Settings", hint: format("Mod+,"), run: () => setSheet("settings") },
 				{ id: "shortcuts", label: "Keyboard shortcuts", hint: format("Mod+Shift+K"), run: () => setSheet("shortcuts") },
 				{ id: "rail", label: "Toggle the rail", hint: format("Mod+B"), run: () => layout.toggleRail() },
@@ -102,9 +128,11 @@ export default function App() {
 				id: `command:${command.name}`,
 				label: `/${command.name}`,
 				hint:
-					describeCommand(command.name).kind === "terminal"
-						? `${command.description} · terminal only`
-						: command.description,
+					shellAction(`/${command.name}`) === "profiles"
+						? "opens the Profiles sheet"
+						: describeCommand(command.name).kind === "terminal"
+							? `${command.description} · terminal only`
+							: command.description,
 				run: () => void chat.runCommand(command.name),
 			})),
 		};
@@ -185,7 +213,7 @@ export default function App() {
 	const facts = () => [
 		{ label: "workspace", value: PROJECT_LABEL || "current workspace" },
 		{ label: "model", value: chat.model() || "unknown" },
-		{ label: "profile", value: chat.profile() },
+		{ label: "profile", value: profiles.effectiveName() },
 		{ label: "permissions", value: chat.permissionMode() },
 		{ label: "commands", value: `${chat.commands().length} available` },
 		{ label: "threads", value: `${chat.threads().length} saved` },
@@ -234,7 +262,10 @@ export default function App() {
 					onInterrupt={() => void chat.interrupt()}
 					running={chat.running}
 					model={chat.model}
-					profile={chat.profile}
+					profile={profiles.effectiveName}
+					profiles={() => profiles.view().data}
+					onUseProfile={(name) => void profiles.use(name)}
+					onManageProfiles={openProfiles}
 					permissionMode={chat.permissionMode}
 					commands={chat.commands}
 					models={chat.models}
@@ -269,6 +300,14 @@ export default function App() {
 
 			<Show when={sheet() === "settings"}>
 				<SettingsSheet facts={facts()} onClose={closeSheet} />
+			</Show>
+			<Show when={sheet() === "profiles"}>
+				<ProfilesSheet
+					panel={profiles}
+					models={chat.models}
+					onLoadModels={() => void chat.loadModels()}
+					onClose={closeSheet}
+				/>
 			</Show>
 			<Show when={sheet() === "shortcuts"}>
 				<ShortcutsSheet onClose={closeSheet} />

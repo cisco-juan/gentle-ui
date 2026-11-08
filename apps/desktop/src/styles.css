@@ -725,6 +725,21 @@ main {
 	color: var(--accent);
 }
 
+.choice:disabled {
+	opacity: 0.45;
+	cursor: not-allowed;
+}
+
+.choice:disabled:hover {
+	background: var(--surface-2);
+	color: var(--text-soft);
+}
+
+.choice.primary:disabled:hover {
+	background: var(--accent-dim);
+	color: var(--accent);
+}
+
 .choice.cancel {
 	color: var(--muted);
 }
@@ -733,6 +748,8 @@ main {
 	flex: 1;
 	min-width: 180px;
 	padding: 6px 10px;
+	border: none;
+	color: var(--text);
 	border-radius: 7px;
 	background: var(--bg);
 	outline: none;
@@ -1330,4 +1347,189 @@ button:focus-visible,
 .thread.pending {
 	opacity: 0.6;
 	cursor: progress;
+}
+
+/* ---------- profiles sheet ---------- */
+
+.sheet.wide {
+	width: min(980px, calc(100vw - 48px));
+	max-height: min(82vh, 760px);
+}
+
+.profiles-layout {
+	display: grid;
+	grid-template-columns: 210px minmax(0, 1fr);
+	gap: 18px;
+	margin-top: 6px;
+}
+
+.profiles-list {
+	display: flex;
+	flex-direction: column;
+	gap: 3px;
+	min-width: 0;
+}
+
+.profile-item {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 6px 9px;
+	border-radius: 7px;
+	text-align: left;
+	color: var(--text-soft);
+}
+
+.profile-item:hover {
+	background: var(--surface-2);
+}
+
+.profile-item.on {
+	background: var(--accent-dim);
+	color: var(--accent);
+}
+
+.profile-name {
+	flex: 1 1 auto;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.profile-badge {
+	flex: 0 0 auto;
+	padding: 0 6px;
+	border-radius: 5px;
+	background: var(--surface-3);
+	color: var(--muted);
+	font-size: 10px;
+	letter-spacing: 0.3px;
+}
+
+.profile-badge.pin {
+	color: var(--accent);
+}
+
+.profiles-detail {
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+	min-width: 0;
+}
+
+.profile-head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	flex-wrap: wrap;
+	gap: 8px;
+	padding: 0 !important;
+}
+
+.profile-head h3 {
+	margin: 0;
+	font-size: 14px;
+	letter-spacing: 0;
+	text-transform: none;
+	color: var(--text);
+}
+
+.profile-actions,
+.profile-footer,
+.profile-add,
+.profile-naming {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 6px;
+}
+
+.profile-naming label,
+.profile-mode {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
+.profile-naming label {
+	flex: 1 1 auto;
+}
+
+.choice.danger {
+	color: var(--error);
+}
+
+/* Save stays in view however many routes the profile has. */
+.profile-footer {
+	position: sticky;
+	bottom: 0;
+	padding: 8px 0 2px;
+	background: var(--surface);
+}
+
+.profile-routes {
+	display: flex;
+	flex-direction: column;
+	gap: 5px;
+}
+
+.profile-route {
+	display: grid;
+	grid-template-columns: minmax(110px, 1fr) minmax(170px, 2fr) 96px 92px 28px;
+	align-items: center;
+	gap: 8px;
+}
+
+.profile-route.head {
+	font-size: 10.5px;
+	letter-spacing: 0.5px;
+	text-transform: uppercase;
+	color: var(--muted);
+}
+
+.profile-route .agent {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.profile-route .text-input {
+	min-width: 0;
+}
+
+.profile-select {
+	min-width: 0;
+	padding: 5px 6px;
+	border-radius: 7px;
+	background: var(--bg);
+	color: var(--text);
+	font-size: 12px;
+}
+
+.profile-notes {
+	margin: 0 0 8px;
+	padding: 6px 10px 6px 26px;
+	border-radius: 8px;
+	background: var(--surface-2);
+	color: var(--muted);
+	font-size: 11.5px;
+}
+
+.profile-notice {
+	margin: 0;
+	padding: 8px 10px;
+	border-radius: 8px;
+	background: var(--surface-2);
+	font-size: 12px;
+}
+
+@media (max-width: 760px) {
+	.profiles-layout {
+		grid-template-columns: 1fr;
+	}
+
+	.profile-route {
+		grid-template-columns: 1fr 1fr;
+	}
 }
