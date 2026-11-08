@@ -452,6 +452,122 @@ export interface PermissionsView {
 	readonly settable: readonly PermissionMode[];
 }
 
+/**
+ * What the agent the bridge launches is configured with, read from its own files.
+ *
+ * The homes below are the ones `packages/bridge/src/pi-environment.ts` pins for the child process, so
+ * `<agentHome>/settings.json`, `<agentHome>/mcp.json` and `<agentHome>/skills` are the configuration
+ * this view reports — not `~/.pi/agent`, which is Pi's own. Every file is projected through the
+ * library that owns its format; one that cannot be read is `unavailable` with a reason and a
+ * message, never an empty list standing in for it.
+ *
+ * The view is read-only, so nothing here is a plan, a digest or a write. MCP servers are the one part
+ * that carries credentials: their header and environment values, their OAuth secrets and the
+ * credentials and query of a URL are never sent, and a secret renders as `<redacted>`.
+ */
+export type SettingsState = "ok" | "unavailable";
+
+/** Why a part of the configuration cannot be shown, in the panel's own vocabulary. */
+export type SettingsFailureReason = "library-missing" | "library-incompatible" | "file-invalid";
+
+/** One key of `settings.json` this view reports, with the value as stored. */
+export interface SettingsKeyValue {
+	readonly key: string;
+	/** A key that is not set, or holds something this view does not show, is null. */
+	readonly value: string | number | boolean | null;
+}
+
+/** One entry of `settings.json`'s `packages`, whichever of the two forms it was written in. */
+export interface SettingsPackage {
+	readonly source: string;
+	readonly autoload: boolean;
+	/** Subdirectories of the package that are loaded; empty means the package's own defaults. */
+	readonly extensions: readonly string[];
+	readonly skills: readonly string[];
+	readonly prompts: readonly string[];
+	readonly themes: readonly string[];
+}
+
+/** `<agentHome>/settings.json`: the packages the agent loads and the keys the sheet shows. */
+export interface SettingsConfigSection {
+	readonly state: SettingsState;
+	readonly reason: SettingsFailureReason | null;
+	readonly message: string;
+	readonly path: string;
+	readonly stored: boolean;
+	/** Empty when the file could not be read; the state says which. */
+	readonly keys: readonly SettingsKeyValue[];
+	readonly packages: readonly SettingsPackage[];
+	readonly notes: readonly string[];
+}
+
+/** A header or environment name whose value is never sent. */
+export interface SettingsSecretName {
+	readonly name: string;
+	readonly value: "<redacted>";
+}
+
+/** One MCP server, with every value that can hold a credential left out. */
+export interface SettingsMcpServer {
+	readonly name: string;
+	readonly transport: "stdio" | "http";
+	readonly enabled: boolean;
+	readonly exposure: string;
+	readonly command: string | null;
+	readonly args: readonly string[];
+	/** Scheme, host and path only: credentials and the query string are not reported. */
+	readonly url: string | null;
+	readonly headers: readonly SettingsSecretName[];
+	readonly environment: readonly SettingsSecretName[];
+	/** True when the server signs in with OAuth or a provider token, whose secret is not reported. */
+	readonly oauth: boolean;
+}
+
+/** `<agentHome>/mcp.json`, as first written by Pi and edited by the terminal. */
+export interface SettingsMcpSection {
+	readonly state: SettingsState;
+	readonly reason: SettingsFailureReason | null;
+	readonly message: string;
+	readonly path: string;
+	readonly stored: boolean;
+	readonly servers: readonly SettingsMcpServer[];
+	readonly notes: readonly string[];
+}
+
+/** One skill found on disk. `temporary` is Pi's scope for a path `settings.json` names. */
+export interface SettingsSkill {
+	readonly name: string;
+	readonly scope: "user" | "project" | "temporary";
+	readonly path: string;
+	readonly description: string;
+}
+
+/** The skills discovered on disk, with the folders they were looked for in. */
+export interface SettingsSkillsSection {
+	readonly state: SettingsState;
+	readonly reason: SettingsFailureReason | null;
+	readonly message: string;
+	/** The agent home's own skills folder. */
+	readonly path: string;
+	/** Extra skill paths `settings.json` names; these are where a `temporary` skill comes from. */
+	readonly paths: readonly string[];
+	readonly entries: readonly SettingsSkill[];
+	readonly notes: readonly string[];
+}
+
+export interface SettingsView {
+	readonly state: SettingsState;
+	readonly reason: SettingsFailureReason | null;
+	readonly message: string;
+	/** The agent home the bridge launches Pi with (`PI_CODING_AGENT_DIR`). */
+	readonly agentHome: string;
+	/** Gentle Shell's own config home (`GENTLE_SHELL_CONFIG_HOME`), where profiles live. */
+	readonly configHome: string;
+	readonly settings: SettingsConfigSection;
+	readonly skills: SettingsSkillsSection;
+	readonly mcp: SettingsMcpSection;
+}
+
 export type ClientMessage =
 	| ({ readonly kind: "open"; readonly id: string } & OpenThreadRequest)
 	| { readonly kind: "close"; readonly threadId: string }
@@ -494,6 +610,8 @@ export type ClientMessage =
 	/** The default permission mode for new threads. Only a lowering is ever written from here. */
 	| { readonly kind: "permissions"; readonly id: string; readonly action: "status" }
 	| { readonly kind: "permissions"; readonly id: string; readonly action: "default"; readonly mode: string }
+	/** The agent's own configuration: homes, packages, skills, MCP servers and the keys the sheet shows. */
+	| { readonly kind: "settings"; readonly id: string; readonly action: "read" }
 	/** Profiles. Every mutation answers with the whole list as it now is on disk. */
 	| { readonly kind: "profiles"; readonly id: string; readonly action: "list" }
 	| {
@@ -558,6 +676,10 @@ export type ServerMessage =
 			readonly kind: "permissions";
 			readonly id: string;
 	  } & PermissionsResult)
+	| ({
+			readonly kind: "settings";
+			readonly id: string;
+	  } & SettingsResult)
 	| { readonly kind: "error"; readonly id?: string; readonly message: string };
 
 /** One memory answer, tagged with the action that asked for it. */
@@ -568,6 +690,9 @@ export type MemoryResult =
 
 /** One permissions answer. */
 export type PermissionsResult = { readonly action: "status" | "default"; readonly data: PermissionsView };
+
+/** One settings answer. Reading is the only thing this family does, so there is one action. */
+export type SettingsResult = { readonly action: "read"; readonly data: SettingsView };
 
 /** One profiles answer, tagged with the action that asked for it. */
 export type ProfilesResult =

@@ -1,7 +1,7 @@
 import { createServer } from "node:http";
 import { randomBytes } from "node:crypto";
 import { WebSocketServer, type WebSocket } from "ws";
-import type { ClientMessage, PermissionsResult, PiCommand, ProfilesResult, ServerMessage, SessionSummary } from "@gentle-shell/protocol";
+import type { ClientMessage, PermissionsResult, PiCommand, ProfilesResult, ServerMessage, SessionSummary, SettingsResult } from "@gentle-shell/protocol";
 import { resolveCommand } from "./commands.ts";
 import { gitDiff, gitStatus } from "./git.ts";
 import { memoryContext, memoryProjects, memorySearch, type MemoryOptions } from "./memory.ts";
@@ -25,6 +25,7 @@ import {
 	type ReviewOptions,
 } from "./review.ts";
 import { listSessions } from "./sessions.ts";
+import { settingsRead, type SettingsOptions } from "./settings.ts";
 import { ThreadHost, isDialogRequest } from "./thread-host.ts";
 import { saveUpload } from "./uploads.ts";
 import { listTree, readFileIn } from "./workspace.ts";
@@ -51,6 +52,8 @@ export interface BridgeServerOptions {
 	readonly profiles?: ProfilesOptions;
 	/** Where gentle-pi keeps the default permission mode; a test points this at a scratch config home. */
 	readonly permissions?: PermissionsOptions;
+	/** The agent's own configuration files; a test points this at a scratch agent home. */
+	readonly settings?: SettingsOptions;
 }
 
 export interface BridgeServerHandle {
@@ -169,6 +172,17 @@ export async function startBridgeServer(options: BridgeServerOptions = {}): Prom
 		if (message.kind === "profiles") {
 			try {
 				await dispatchProfiles(socket, message);
+			} catch (error) {
+				send(socket, { kind: "error", id: message.id, message: errorMessage(error) });
+			}
+			return;
+		}
+
+		// The agent's own configuration belongs to the same home the bridge launches Pi with, not to a
+		// thread. This family only reads; every write of it is a later task and none is served here.
+		if (message.kind === "settings") {
+			try {
+				await dispatchSettings(socket, message);
 			} catch (error) {
 				send(socket, { kind: "error", id: message.id, message: errorMessage(error) });
 			}
@@ -412,6 +426,27 @@ export async function startBridgeServer(options: BridgeServerOptions = {}): Prom
 			default:
 				// A client that sends an action this bridge does not know must hear so, not wait forever.
 				throw new Error(`unsupported profiles action: ${String((message as { action?: unknown }).action)}`);
+		}
+	}
+
+	/**
+	 * The agent's configuration, read from its own files.
+	 *
+	 * There is one answer and one action: the whole view, already projected and already redacted here,
+	 * so no path, header or token crosses the wire because a client asked for a field by name.
+	 */
+	async function dispatchSettings(
+		socket: WebSocket,
+		message: Extract<ClientMessage, { kind: "settings" }>,
+	): Promise<void> {
+		const settingsOptions = options.settings ?? {};
+		const reply = (answer: SettingsResult): void => send(socket, { kind: "settings", id: message.id, ...answer });
+
+		switch (message.action) {
+			case "read":
+				return reply({ action: "read", data: await settingsRead(workspace, settingsOptions) });
+			default:
+				throw new Error(`unsupported settings action: ${String((message as { action?: unknown }).action)}`);
 		}
 	}
 
