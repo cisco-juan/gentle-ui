@@ -44,7 +44,7 @@ not the branding, as the reference.
 T1  [x] Workspace scaffold: git init, pnpm workspace, `apps/desktop` (Tauri v2 + Solid + Vite), `packages/bridge`. S6 — 64eb88d
 T2  [x] Bridge: spawn `pi --mode rpc`, JSONL framing, command allowlist, event fan-out, extension dialogs. S1 — 3f87bac
 T3  Session and project model: list, create, switch, search threads; sidebar navigation. S1 S3 S7
-T4  [x] Chat view: streaming messages, collapsible tool cards, inline permission approvals, composer. S1 S3 — fa339ef
+T4  [x] Chat view: streaming messages, collapsible tool cards, inline permission approvals, composer. S1 S3 — a033bb3
     Verified end to end: a prompt typed in the UI ran bash, rendered the tool card with its result,
     streamed the assistant reply, and committed it with model and cost. Screenshot capture in the
     headless browser returns blank frames (environment), so the proof is the DOM transcript.
