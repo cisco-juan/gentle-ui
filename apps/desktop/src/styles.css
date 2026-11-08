@@ -76,29 +76,44 @@ kbd {
 
 /* ---------- shell ---------- */
 
+/* Columns come from the layout store as an inline style; this is only the first-paint fallback. */
 .app {
 	display: grid;
-	grid-template-columns: 268px minmax(0, 1fr) 360px;
+	grid-template-columns: 268px 6px minmax(0, 1fr) 6px 360px;
 	height: 100%;
 	overflow: hidden;
-	transition: grid-template-columns 160ms ease;
 }
 
-.app.rail-closed {
-	grid-template-columns: 0 minmax(0, 1fr) 360px;
-}
-
-.app.inspector-closed {
-	grid-template-columns: 268px minmax(0, 1fr) 0;
-}
-
-.app.rail-closed.inspector-closed {
-	grid-template-columns: 0 minmax(0, 1fr) 0;
-}
-
-.app.rail-closed .sidebar {
+.app.rail-closed .sidebar,
+.app.inspector-closed .inspector {
 	opacity: 0;
 	pointer-events: none;
+}
+
+.sidebar,
+.inspector {
+	overflow: hidden;
+}
+
+.splitter {
+	position: relative;
+	cursor: col-resize;
+	background: transparent;
+	touch-action: none;
+}
+
+.splitter::after {
+	content: "";
+	position: absolute;
+	inset: 0 2px;
+	border-radius: 2px;
+	background: transparent;
+	transition: background 120ms ease;
+}
+
+.splitter:hover::after,
+.splitter.dragging::after {
+	background: color-mix(in srgb, var(--accent) 40%, transparent);
 }
 
 main {
@@ -249,10 +264,12 @@ main {
 
 .chevron {
 	transition: transform 120ms ease;
+	/* The glyph points right; an open group points down, a folded one keeps pointing right. */
+	transform: rotate(90deg);
 }
 
 .chevron.closed {
-	transform: rotate(-90deg);
+	transform: rotate(0deg);
 }
 
 .group-label {
@@ -727,6 +744,12 @@ main {
 	color: var(--muted);
 }
 
+.notice-repeat {
+	font-family: var(--mono);
+	font-size: 10.5px;
+	opacity: 0.7;
+}
+
 .notice.warning {
 	background: color-mix(in srgb, var(--warn) 10%, var(--surface));
 	color: var(--warn);
@@ -964,6 +987,14 @@ main {
 	font-family: var(--mono);
 	font-size: 10.5px;
 	color: var(--muted);
+}
+
+.status-hint {
+	margin-left: 10px;
+	font-family: var(--sans);
+	font-size: 10.5px;
+	color: var(--muted);
+	opacity: 0.85;
 }
 
 .statusbar .right {

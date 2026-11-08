@@ -100,7 +100,14 @@ function Row(props: { item: ChatItem; onAnswer: (requestId: string, response: Ex
 			</Match>
 
 			<Match when={item().kind === "notice" ? (item() as NoticeItem) : undefined}>
-				{(notice) => <div class={`notice ${notice().tone}`}>{notice().text}</div>}
+				{(notice) => (
+					<div class={`notice ${notice().tone}`}>
+						{notice().text}
+						<Show when={(notice().repeat ?? 1) > 1}>
+							<span class="notice-repeat"> ×{notice().repeat}</span>
+						</Show>
+					</div>
+				)}
 			</Match>
 		</Switch>
 	);

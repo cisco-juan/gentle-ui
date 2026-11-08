@@ -5,11 +5,14 @@ import { Inspector } from "./components/Inspector";
 import { Palette, type PaletteGroup } from "./components/Palette";
 import { SettingsSheet, ShortcutsSheet } from "./components/Sheets";
 import { Sidebar } from "./components/Sidebar";
+import { Splitter } from "./components/Splitter";
 import { StatusBar } from "./components/StatusBar";
 import { DEV_BRIDGE_URL, resolveBridgeUrl } from "./lib/bridge-endpoint";
 import { BINDINGS, createKeymap, isMac, type KeyEventLike } from "./lib/keybindings";
+import { gridTemplate } from "./lib/layout";
 import { folderLabel, relativeTime } from "./lib/threads";
 import { createChatController } from "./state/chat";
+import { createLayout } from "./state/layout";
 
 const PROJECT_LABEL = import.meta.env.VITE_PROJECT_LABEL ?? "";
 const MAC = isMac(`${navigator.userAgent} ${navigator.platform}`);
@@ -29,8 +32,7 @@ export default function App() {
 	const [bridgeFailure, setBridgeFailure] = createSignal<string | null>(null);
 	const [sheet, setSheet] = createSignal<Sheet>(null);
 	const [palette, setPalette] = createSignal<PaletteMode>(null);
-	const [railOpen, setRailOpen] = createSignal(true);
-	const [inspectorOpen, setInspectorOpen] = createSignal(true);
+	const layout = createLayout();
 
 	onMount(() => {
 		void (async () => {
@@ -57,8 +59,9 @@ export default function App() {
 				{ id: "new-thread", label: "New thread", hint: "start a clean session", run: () => void chat.newThread() },
 				{ id: "settings", label: "Settings", hint: format("Mod+,"), run: () => setSheet("settings") },
 				{ id: "shortcuts", label: "Keyboard shortcuts", hint: format("Mod+Shift+K"), run: () => setSheet("shortcuts") },
-				{ id: "rail", label: "Toggle the rail", hint: format("Mod+B"), run: () => setRailOpen((open) => !open) },
-				{ id: "inspector", label: "Toggle the inspector", hint: format("Mod+Alt+B"), run: () => setInspectorOpen((open) => !open) },
+				{ id: "rail", label: "Toggle the rail", hint: format("Mod+B"), run: () => layout.toggleRail() },
+				{ id: "inspector", label: "Toggle the inspector", hint: format("Mod+Alt+B"), run: () => layout.toggleInspector() },
+				{ id: "layout", label: "Reset the layout", hint: "panels back to their default size", run: () => layout.reset() },
 				{ id: "interrupt", label: "Interrupt the agent", hint: "Esc", run: () => void chat.interrupt() },
 			],
 		};
@@ -128,10 +131,10 @@ export default function App() {
 					openPalette("threads");
 					break;
 				case "rail":
-					setRailOpen((open) => !open);
+					layout.toggleRail();
 					break;
 				case "inspector":
-					setInspectorOpen((open) => !open);
+					layout.toggleInspector();
 					break;
 				case "shortcuts":
 					setPalette(null);
@@ -165,10 +168,15 @@ export default function App() {
 		{ label: "commands", value: `${chat.commands().length} available` },
 		{ label: "threads", value: `${chat.threads().length} saved` },
 		{ label: "bridge", value: chat.connection() },
+		{ label: "layout", value: `${layout.state().railWidth}px rail · ${layout.state().inspectorWidth}px inspector` },
 	];
 
 	return (
-		<div class="app" classList={{ "rail-closed": !railOpen(), "inspector-closed": !inspectorOpen() }}>
+		<div
+			class="app"
+			classList={{ "rail-closed": !layout.state().railOpen, "inspector-closed": !layout.state().inspectorOpen }}
+			style={{ "grid-template-columns": gridTemplate(layout.state()) }}
+		>
 			<Sidebar
 				project={PROJECT_LABEL || "current workspace"}
 				connection={chat.connection()}
@@ -179,6 +187,13 @@ export default function App() {
 				onSelectThread={(path) => void chat.switchThread(path)}
 				onOpenSettings={() => setSheet("settings")}
 				onOpenShortcuts={() => setSheet("shortcuts")}
+			/>
+
+			<Splitter
+				edge="rail"
+				width={() => layout.state().railWidth}
+				onResize={(width) => layout.resizeRail(width)}
+				onReset={() => layout.reset()}
 			/>
 
 			<main>
@@ -206,16 +221,21 @@ export default function App() {
 					model={chat.model}
 					cost={chat.cost}
 					running={chat.running}
-					railOpen={railOpen}
-					inspectorOpen={inspectorOpen}
-					onToggleRail={() => setRailOpen((open) => !open)}
-					onToggleInspector={() => setInspectorOpen((open) => !open)}
+					hint={chat.hint}
+					railOpen={() => layout.state().railOpen}
+					inspectorOpen={() => layout.state().inspectorOpen}
+					onToggleRail={() => layout.toggleRail()}
+					onToggleInspector={() => layout.toggleInspector()}
 				/>
 			</main>
 
-			<Show when={inspectorOpen()}>
-				<Inspector chat={chat} onClose={() => setInspectorOpen(false)} />
-			</Show>
+			<Splitter
+				edge="inspector"
+				width={() => layout.state().inspectorWidth}
+				onResize={(width) => layout.resizeInspector(width)}
+				onReset={() => layout.reset()}
+			/>
+			<Inspector chat={chat} onClose={() => layout.toggleInspector()} />
 
 			<Palette open={palette() !== null} onClose={() => setPalette(null)} groups={groups()} />
 

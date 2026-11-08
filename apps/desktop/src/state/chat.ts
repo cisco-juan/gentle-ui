@@ -29,7 +29,7 @@ export type ChatItem =
 			durationMs?: number;
 	  }
 	| { kind: "permission"; id: string; request: ExtensionUiRequest; answer: string | null }
-	| { kind: "notice"; id: string; text: string; tone: "info" | "warning" | "error" };
+	| { kind: "notice"; id: string; text: string; tone: "info" | "warning" | "error"; repeat?: number };
 
 export interface ChatController {
 	readonly items: Accessor<ChatItem[]>;
@@ -42,6 +42,8 @@ export interface ChatController {
 	readonly commands: Accessor<Array<{ name: string; description: string }>>;
 	readonly models: Accessor<Array<{ provider: string; id: string; contextWindow?: number }>>;
 	readonly profile: Accessor<string>;
+	/** Transient line for informational agent notices, which must not fill the transcript. */
+	readonly hint: Accessor<string>;
 	readonly permissionMode: Accessor<string>;
 	readonly threads: Accessor<readonly SessionSummary[]>;
 	/** Session file the open thread is showing, `null` for a thread with no file yet. */
@@ -96,6 +98,8 @@ export function createChatController(options: { url: string; cwd: string }): Cha
 	const [models, setModels] = createSignal<Array<{ provider: string; id: string; contextWindow?: number }>>([]);
 	const [profile] = createSignal("default");
 	const [permissionMode, setPermissionModeSignal] = createSignal("normal");
+	const [hint, setHint] = createSignal("");
+	let hintTimer: ReturnType<typeof setTimeout> | undefined;
 	const [threads, setThreads] = createSignal<readonly SessionSummary[]>([]);
 	const [activePath, setActivePath] = createSignal<string | null>(null);
 	const [attachments, setAttachments] = createSignal<readonly Attachment[]>([]);
@@ -108,7 +112,21 @@ export function createChatController(options: { url: string; cwd: string }): Cha
 	const nextId = (): string => `item-${++counter}`;
 
 	function append(item: ChatItem): void {
-		setItems((current) => [...current, item]);
+		setItems((current) => {
+			// The agent can repeat the same notice (a registry refresh, a retry); collapsing identical
+			// consecutive lines keeps the transcript readable instead of burying the conversation.
+			const last = current[current.length - 1];
+			if (
+				item.kind === "notice" &&
+				last?.kind === "notice" &&
+				last.text === item.text &&
+				(last.repeat ?? 1) < 99
+			) {
+				const merged: ChatItem = { ...last, repeat: (last.repeat ?? 1) + 1 };
+				return [...current.slice(0, -1), merged];
+			}
+			return [...current, item];
+		});
 	}
 
 	function patch(callId: string, change: Partial<Extract<ChatItem, { kind: "tool" }>>): void {
@@ -242,8 +260,21 @@ export function createChatController(options: { url: string; cwd: string }): Cha
 			return;
 		}
 		if (method === "notify") {
-			const tone = record.notifyType === "error" ? "error" : record.notifyType === "warning" ? "warning" : "info";
-			append({ kind: "notice", id: nextId(), text: String(record.message ?? ""), tone });
+			// Informational notices (registry refreshes, retries) are ambient, not conversation: they go
+			// to the status line and fade, so the transcript stays about the work.
+			const warning = record.notifyType === "warning";
+			if (record.notifyType === "error" || warning) {
+				append({
+					kind: "notice",
+					id: nextId(),
+					text: String(record.message ?? ""),
+					tone: record.notifyType === "error" ? "error" : "warning",
+				});
+				return;
+			}
+			setHint(String(record.message ?? ""));
+			if (hintTimer !== undefined) clearTimeout(hintTimer);
+			hintTimer = setTimeout(() => setHint(""), 8000);
 		}
 	}
 
@@ -570,6 +601,7 @@ export function createChatController(options: { url: string; cwd: string }): Cha
 		models,
 		profile,
 		permissionMode,
+		hint,
 		threads,
 		activePath,
 		bridge: () => client,

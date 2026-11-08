@@ -155,6 +155,7 @@ function ThreadGroupView(props: {
 		<div class="thread-group">
 			<button class="group-head" onClick={() => props.onToggle()}>
 				<Icon name="chevron" class={`chevron ${props.collapsed ? "closed" : ""}`} size={11} />
+				<Icon name="folder" size={13} />
 				<span class="group-label">{props.group.label}</span>
 			</button>
 

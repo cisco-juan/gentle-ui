@@ -1,4 +1,4 @@
-import type { Accessor } from "solid-js";
+import { Show, type Accessor } from "solid-js";
 import { Icon } from "./Icon";
 
 /**
@@ -11,6 +11,7 @@ export function StatusBar(props: {
 	model: Accessor<string>;
 	cost: Accessor<number>;
 	running: Accessor<boolean>;
+	hint: Accessor<string>;
 	railOpen: Accessor<boolean>;
 	inspectorOpen: Accessor<boolean>;
 	onToggleRail: () => void;
@@ -18,7 +19,12 @@ export function StatusBar(props: {
 }) {
 	return (
 		<div class="statusbar">
-			<span class="left">{props.running() ? "running" : "ready"}</span>
+			<span class="left">
+				{props.running() ? "running" : "ready"}
+				<Show when={props.hint().length > 0}>
+					<span class="status-hint">{props.hint()}</span>
+				</Show>
+			</span>
 			<span class="right">
 				<span class="muted">{props.model()}</span>
 				<span class="divider">·</span>
