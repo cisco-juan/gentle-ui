@@ -1,0 +1,8 @@
+packages:
+  - apps/*
+  - packages/*
+
+# pnpm 12 requires an explicit decision per dependency that ships build scripts.
+allowBuilds:
+  protobufjs: false
+  "@google/genai": false

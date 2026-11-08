@@ -1,0 +1,71 @@
+# Gentle Shell Desktop UI
+
+A cross-platform desktop frontend for the Gentle Shell / Pi agent harness. The harness is consumed as
+pinned npm dependencies (`@earendil-works/pi-coding-agent`, `gentle-pi`), never forked, so upstream
+releases flow in as version bumps. The UI is a Tauri v2 shell (system webview) around a Vite frontend,
+with a Node bridge that drives the `pi` agent process.
+
+Status: planning. Architecture decided (desktop shell + dependency consumption), RPC surface being mapped.
+
+## Specs
+
+S1. The product must expose every feature Gentle Shell already has.
+Quote: "buscamos que tenga todas las funcionalidades que tiene gentle shell"
+
+S2. Upstream changes must stay absorbable without maintaining a hard fork.
+Quote: "que se pueda actualizar con los cambios a futuro que puedan ir surgiendo"
+Decision: consume the harness as semver-pinned dependencies; the UI is a presentation layer only.
+
+S3. Features must be distributed so they are easy to understand, and agent/profile selection belongs in
+the chat surface rather than a separate modal.
+Quote: "debemos distribuir las funcionalides para que sean facil de entender, por ejemplo en este tema
+podemos seleccionar los agentes aqui en el chat, ahi podriamos mejor seleccionar los perfiles, y ver como
+distribuimos mejor el UI de todas las funcionalidades."
+
+S4. Keyboard combinations must reach every feature.
+Quote: "Tener combinacion de teclas para acceder a funcionalidades"
+
+S5. Files must be copyable and pasteable as part of the development flow.
+Quote: "que soporte copiar y pegar archivos y todo es que puedan ayudar bastante en el desarrollo."
+
+S6. Windows, Linux and macOS are all first-class targets.
+Quote: "para confirmar, con estas herramientas sigue siendo compatible con windows, linux y mac?"
+
+S7. Visual reference is the layout captured at
+`/home/cisco/Pictures/Screenshots/Screenshot_20261108_085213.png` (three zones: sidebar, chat, right
+panel). The screenshot is stock Gentle Shell; the redesign is about distribution and skin, not a new app
+model.
+Note: the user described the reference as "herdrapp"; the image itself is Gentle Shell. Treat the layout,
+not the branding, as the reference.
+
+## Tasks
+
+T1  Workspace scaffold: git init, pnpm workspace, `apps/desktop` (Tauri v2 + Vite), `packages/bridge` (Node). S6
+T2  Bridge: spawn `pi` in RPC/headless mode, stream events, send prompts, cancel, switch model/profile. S1
+T3  Session and project model: list, create, switch, search threads; sidebar navigation. S1 S3 S7
+T4  Chat view: streaming messages, collapsible tool cards, inline permission approvals, composer. S1 S3
+T5  Composer chips: profile, model, effort, permission mode, attachments (no modals). S3
+T6  Right inspector tabs: Changes, Files, Tasks, Memory, Agents/jobs. S3 S7
+T7  Command palette plus a Mod-based keybinding layer and cheat sheet. S4
+T8  File drag and drop, clipboard image paste, copy path (real paths in Tauri, upload fallback in dev). S5
+T9  Native review (RDD) panel: candidate, lenses, verdict, acknowledgement. S1
+T10 Packaging: node sidecar, per-OS artifacts via CI matrix, dependency bump workflow. S2 S6
+
+## Log
+
+L1. "Estmos buscando crear un UI para gentle-shell https://github.com/Gentleman-Programming/gentle-shell,
+estoy pensando en hacer un fork del proyecto y crear una interface inspirada en este tema que tengo de
+herdrapp /home/cisco/Pictures/Screenshots/Screenshot_20261108_085213.png, buscamos que tenga todas las
+funcionalidades que tiene gentle shell, que se pueda actualizar con los cambios a futuro que puedan ir
+surgiendo. debemos distribuir las funcionalides para que sean facil de entender, por ejemplo en este tema
+podemos seleccionar los agentes aqui en el chat, ahi podriamos mejor seleccionar los perfiles, y ver como
+distribuimos mejor el UI de todas las funcionalidades. Tener combinacion de teclas para acceder a
+funcionalidades, que soporte copiar y pegar archivos y todo es que puedan ayudar bastante en el desarrollo.
+continua"
+
+L2. "1. si 2.si." — approves installing the Rust toolchain and consuming the harness as a dependency
+instead of forking it.
+
+L3. "para confirmar, con estas herramientas sigue siendo compatible con windows, linux y mac?" — raises S6.
+Environment verified: webkit2gtk-4.1 2.54.2, gtk+-3.0 3.24.52, libsoup3, librsvg, openssl, base-devel all
+present on the Linux host; rustup installing in the background.
