@@ -39,7 +39,8 @@ jobs:
             platform: ubuntu-latest
             args: ""
           - label: macos
-            platform: macos-14
+            # `macos-14` is no longer a supported label on this account; latest resolves to an arm64 image.
+            platform: macos-latest
             args: ""
           - label: windows
             platform: windows-latest
@@ -104,6 +105,10 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           projectPath: apps/desktop
+          # The action shells out to `npm run tauri` by default, which runs from the repository root and
+          # leaves the app's own binaries out of PATH: `beforeBuildCommand` then failed with
+          # "vite: not found". pnpm runs the command inside the workspace package, where they are.
+          tauriScript: pnpm --filter @gentle-shell/desktop exec tauri
           tagName: ${{ github.event.inputs.tag || github.ref_name }}
           releaseName: "Gentle Shell ${{ github.event.inputs.tag || github.ref_name }}"
           releaseBody: "Desktop bundles for Linux, macOS and Windows. See docs/packaging.md."
