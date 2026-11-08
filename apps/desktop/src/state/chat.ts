@@ -2,6 +2,7 @@ import { batch, createSignal, type Accessor } from "solid-js";
 import type { ExtensionUiRequest, ExtensionUiResponse, ServerMessage, SessionSummary, UploadedFile } from "@gentle-shell/protocol";
 import { BridgeClient } from "../lib/bridge";
 import { checkCommand } from "../lib/commands";
+import { extensionErrorText, startsRun } from "../lib/prompt-outcome";
 import {
 	IMAGE_ONLY_PROMPT,
 	buildImages,
@@ -199,6 +200,10 @@ export function createChatController(options: { url: string; cwd: string }): Cha
 
 		if (type === "extension_ui_request") {
 			handleFireAndForget(record);
+			return;
+		}
+		if (type === "extension_error") {
+			append({ kind: "notice", id: nextId(), text: extensionErrorText(record), tone: "error" });
 			return;
 		}
 		if (type === "agent_start") {
@@ -415,7 +420,9 @@ export function createChatController(options: { url: string; cwd: string }): Cha
 		append({ kind: "user", id: nextId(), text: message });
 		setRunning(true);
 		try {
-			await client.command(threadId, "prompt", images.length > 0 ? { message, images } : { message });
+			const answer = await client.command(threadId, "prompt", images.length > 0 ? { message, images } : { message });
+			// An extension command finishes inside this call and never emits agent_settled.
+			if (!startsRun(answer)) setRunning(false);
 		} catch (error) {
 			setRunning(false);
 			append({ kind: "notice", id: nextId(), text: errorText(error), tone: "error" });
@@ -490,6 +497,8 @@ export function createChatController(options: { url: string; cwd: string }): Cha
 		} catch {
 			// Already idle: nothing to interrupt.
 		}
+		// Pi emits nothing when it was already idle, so the UI cannot wait for an event to leave "working".
+		setRunning(false);
 	}
 
 	async function newThread(): Promise<void> {

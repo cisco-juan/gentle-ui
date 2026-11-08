@@ -86,10 +86,9 @@ export async function startBridgeServer(options: BridgeServerOptions = {}): Prom
 			broadcast({ kind: "record", threadId: host.id, record: record as { type: string } });
 		});
 		host.pi.on("ui-request", (request: Record<string, unknown>) => {
-			if (!isDialogRequest(request as never)) {
-				broadcast({ kind: "record", threadId: host.id, record: request as { type: string } });
-				return;
-			}
+			// Pi's process already re-emits every request as a `record`, so only a dialog needs this second
+			// channel; sending the rest again showed each notify and status update twice.
+			if (!isDialogRequest(request as never)) return;
 			broadcast({ kind: "ui-request", threadId: host.id, request: request as never });
 		});
 		host.pi.on("log", (line: string) => broadcast({ kind: "log", threadId: host.id, line }));
@@ -212,7 +211,9 @@ export async function startBridgeServer(options: BridgeServerOptions = {}): Prom
 		}
 
 		try {
-			const data = await host.pi.send(command, message.params ?? {});
+			// A prompt can be an extension command that asks the person something; Pi answers it only once
+			// they have, so it is the one command that must not be timed out.
+			const data = await host.pi.send(command, message.params ?? {}, command === "prompt" ? null : undefined);
 			send(socket, { kind: "result", id: message.id, threadId: host.id, command, ok: true, data });
 		} catch (error) {
 			send(socket, { kind: "result", id: message.id, threadId: host.id, command, ok: false, error: errorMessage(error) });

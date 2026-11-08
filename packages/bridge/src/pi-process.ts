@@ -17,7 +17,8 @@ interface PendingRequest {
 	readonly command: string;
 	readonly resolve: (data: unknown) => void;
 	readonly reject: (error: Error) => void;
-	readonly timer: NodeJS.Timeout;
+	/** Absent for a command that is allowed to wait on a person. */
+	readonly timer: NodeJS.Timeout | undefined;
 }
 
 interface ExitInfo {
@@ -88,11 +89,16 @@ export class PiProcess extends EventEmitter {
 		child.on("exit", (code, signal) => this.#onExit(code, signal));
 	}
 
-	/** Send one RPC command and resolve with its `response.data`. */
+	/**
+	 * Send one RPC command and resolve with its `response.data`.
+	 *
+	 * `timeoutMs: null` waits as long as Pi does. Pi holds a `prompt` response while an extension command
+	 * waits on a dialog, so a clock there turns a person reading a question into a failed command.
+	 */
 	send<T = unknown>(
 		command: string,
 		params: Readonly<Record<string, unknown>> = {},
-		timeoutMs = this.#options.requestTimeoutMs ?? DEFAULT_TIMEOUT_MS,
+		timeoutMs: number | null = this.#options.requestTimeoutMs ?? DEFAULT_TIMEOUT_MS,
 	): Promise<T> {
 		const child = this.#child;
 		if (!child || this.#exited) return Promise.reject(new Error("pi process is not running"));
@@ -101,10 +107,13 @@ export class PiProcess extends EventEmitter {
 		const record = { id, type: command, ...params };
 
 		return new Promise<T>((resolve, reject) => {
-			const timer = setTimeout(() => {
-				this.#pending.delete(id);
-				reject(new Error(`pi did not answer "${command}" within ${timeoutMs}ms`));
-			}, timeoutMs);
+			const timer =
+				timeoutMs === null
+					? undefined
+					: setTimeout(() => {
+							this.#pending.delete(id);
+							reject(new Error(`pi did not answer "${command}" within ${timeoutMs}ms`));
+						}, timeoutMs);
 
 			this.#pending.set(id, {
 				command,
@@ -116,7 +125,7 @@ export class PiProcess extends EventEmitter {
 			this.#write(`${JSON.stringify(record)}\n`).catch((error: unknown) => {
 				const pending = this.#pending.get(id);
 				this.#pending.delete(id);
-				if (pending) clearTimeout(pending.timer);
+				if (pending?.timer) clearTimeout(pending.timer);
 				reject(error instanceof Error ? error : new Error(String(error)));
 			});
 		});
@@ -192,7 +201,7 @@ export class PiProcess extends EventEmitter {
 		}
 
 		this.#pending.delete(id as string);
-		clearTimeout(pending.timer);
+		if (pending.timer) clearTimeout(pending.timer);
 		if (record.success === true) pending.resolve(record.data);
 		else pending.reject(new Error(typeof record.error === "string" ? record.error : `${pending.command} failed`));
 	}
@@ -208,7 +217,7 @@ export class PiProcess extends EventEmitter {
 
 	#fail(error: Error): void {
 		for (const [, pending] of this.#pending) {
-			clearTimeout(pending.timer);
+			if (pending.timer) clearTimeout(pending.timer);
 			pending.reject(error);
 		}
 		this.#pending.clear();
