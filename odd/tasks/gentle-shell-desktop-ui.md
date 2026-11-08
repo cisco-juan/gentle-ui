@@ -5,7 +5,7 @@ pinned npm dependencies (`@earendil-works/pi-coding-agent`, `gentle-pi`), never 
 releases flow in as version bumps. The UI is a Tauri v2 shell (system webview) around a Vite frontend,
 with a Node bridge that drives the `pi` agent process.
 
-Status: T1-T8, T11-T18, T22, T23, T25-T27 done; T9 has phase one; T10, T19-T21, T24 and T28 open. Bridge speaks to
+Status: T1-T8, T11-T18, T22-T27, T31 and T32 done; T9 has phase one; T10, T19-T21 and T28-T30 open. Bridge speaks to
 `pi --mode rpc` over a tokenised loopback WebSocket and re-answers extension dialogs; 116 bridge and 125
 desktop tests green. See `docs/architecture.md`.
 
@@ -149,8 +149,13 @@ T23 [x] Transcript shows the model's thinking chain, collapsed by default, and a
     (missing export), 13/13 lib tests green. Verified in the running app: a real turn rendered
     "thinking · <peek> · 230 chars" above its answer. Route: inline plus one writer for the component and
     styles. Risk none.
-T24 [ ] Tool calls that touch files render a file-change card with the path and the change; the raw argument dump
+T24 [x] Tool calls that touch files render a file-change card with the path and the change; the raw argument dump
     stops being the only view. S13
+    `fileChangeOf()` reads a change out of the arguments (`write` whole file, `edit` old/new hunks, `edits` as
+    array/single object/JSON string), never throws on hostile input, and returns null for every other tool. The
+    card shows basename, directory, `+N −M`, and either the diff or a 40-line preview. 12 tests, RED first.
+    Verified in the app: "▾ <path> 131 lines done" expanding to the preview. Route: one writer, then the parent
+    reviewed and split the commit. Risk: none (a view over arguments already on screen).
 T25 [x] A run is visibly in progress at every moment (thinking, tool running, streaming), not only while the draft
     is empty. S14
     `activityOf()` names what is happening ("thinking", "running bash", "writing the answer", "waiting for your
@@ -341,8 +346,13 @@ What was built and why:
 T29 [ ] Agents tab: newest first, and a click on a subagent opens a modal showing that run's iteration. S17
 T30 [ ] Inspector data is scoped to the open thread: switching chats must not leave the previous thread's
     changes, files, tasks, memory or agents on screen. S18
-T31 [ ] The permission menu is wide enough for the selected mode to be readable. S19
-T32 [ ] A jump-to-end button appears in the chat only while the reader is away from the end. S20
+T31 [x] The permission menu is wide enough for the selected mode to be readable. S19
+    300px instead of 240px, and the current row now carries a check plus a `current` label: a background tint alone
+    was the whole signal. Verified in the app: width 300, row reads "✓ normal CURRENT". Risk: none.
+T32 [x] A jump-to-end button appears in the chat only while the reader is away from the end. S20
+    One reactive fact (`away`, derived from the same follow-the-stream decision) drives a sticky pill; clicking it
+    resumes following. Verified in the app: pill present 7.7k px from the end, and after clicking it the transcript
+    sat at the end (0) with the pill gone. Risk: none.
 
 T28 [ ] A thread opens showing the oldest row of its first page for a moment before it lands on the newest one:
     the follow effect runs before the skeleton leaves and the height settles. Visible in the app (empty → top →
