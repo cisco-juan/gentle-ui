@@ -1,8 +1,6 @@
 // This package has no `@types/node`: the runner is Node's own. The directives keep `tsc --noEmit` honest
 // about every other line; drop them once `@types/node` is a devDependency here.
-// @ts-expect-error -- node built-in types are not installed for this package
 import assert from "node:assert/strict";
-// @ts-expect-error -- node built-in types are not installed for this package
 import test from "node:test";
 import {
 	buildImages,

@@ -2,9 +2,7 @@
 //
 // The two directives match `keybindings.test.ts`: this package has no `@types/node`, the runner is
 // Node's own, and `tsc --noEmit` must stay honest about every other line.
-// @ts-expect-error -- node built-in types are not installed for this package
 import assert from "node:assert/strict";
-// @ts-expect-error -- node built-in types are not installed for this package
 import test from "node:test";
 import { BRIDGE_ENDPOINT_COMMAND, DEV_BRIDGE_URL, resolveBridgeUrl, websocketUrl } from "./bridge-endpoint.ts";
 
