@@ -5,7 +5,7 @@ pinned npm dependencies (`@earendil-works/pi-coding-agent`, `gentle-pi`), never 
 releases flow in as version bumps. The UI is a Tauri v2 shell (system webview) around a Vite frontend,
 with a Node bridge that drives the `pi` agent process.
 
-Status: T1-T8, T11-T18, T22-T27, T29-T32 done; T9 has phase one; T10, T19-T21 and T28 open. Bridge speaks to
+Status: T1-T8, T11-T18, T22-T27, T29-T32 done; T9 has phase one; T10 and T19-T21 open. Bridge speaks to
 `pi --mode rpc` over a tokenised loopback WebSocket and re-answers extension dialogs; 116 bridge and 125
 desktop tests green. See `docs/architecture.md`.
 
@@ -369,10 +369,11 @@ T32 [x] A jump-to-end button appears in the chat only while the reader is away f
     resumes following. Verified in the app: pill present 7.7k px from the end, and after clicking it the transcript
     sat at the end (0) with the pill gone. Risk: none.
 
-T28 [ ] A thread opens showing the oldest row of its first page for a moment before it lands on the newest one:
-    the follow effect runs before the skeleton leaves and the height settles. Visible in the app (empty → top →
-    bottom within a few seconds); must not be a jump the reader can catch. S16
-    Found while verifying T27; measured, not guessed.
+T28 [x] A thread opens showing the oldest row of its first page for a moment before it lands on the newest one:
+    the follow effect ran before the skeleton left and the height settled. S16
+    Found while verifying T27; measured, not guessed. Fixed by tracking `loading` in the follow effect, so the pin
+    runs again once the skeleton is gone and the scroll height is real. Verified in the app: the first frame with
+    rows already sits at the end (atEnd 0), where before it showed atEnd 3245 and jumped later. Risk: none.
 
 L14. 2026-11-08. Delivery plan the user announced for when these tasks are done, verbatim: "al finalizar todas
 estas tareas vamos a crear el repo en mi perfil, lo llamaremos gentle-ui, tendremos la documentacion completa en

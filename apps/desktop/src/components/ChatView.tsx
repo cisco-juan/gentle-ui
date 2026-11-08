@@ -73,6 +73,9 @@ export function ChatView(props: {
 	createEffect(() => {
 		const items = props.items();
 		props.draft();
+		// The skeleton occupies the pane until the history lands; pin once more when it leaves, because
+		// the height the scroll needs is only real after that swap.
+		props.loading();
 		const before = previous;
 		previous = items;
 
