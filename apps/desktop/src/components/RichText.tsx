@@ -1,4 +1,5 @@
 import { For, Match, Switch, type JSX } from "solid-js";
+import { Dynamic } from "solid-js/web";
 
 /**
  * Minimal markdown renderer.
@@ -105,6 +106,8 @@ function blocks(source: string): Block[] {
 	return out;
 }
 
+// An element chosen at runtime is a `Dynamic`: a capitalised tag variable is a component call, so
+// `const Tag = "ul"; <Tag>` throws "Comp is not a function" at render.
 function renderBlock(block: Block): JSX.Element {
 	return (
 		<Switch>
@@ -112,20 +115,14 @@ function renderBlock(block: Block): JSX.Element {
 				{(value) => <p>{inline(value().text)}</p>}
 			</Match>
 			<Match when={block.kind === "heading" ? block : null}>
-				{(value) => {
-					const Tag = `h${Math.min(value().level + 1, 6)}` as keyof JSX.IntrinsicElements;
-					return <Tag>{inline(value().text)}</Tag>;
-				}}
+				{(value) => <Dynamic component={`h${Math.min(value().level + 1, 6)}`}>{inline(value().text)}</Dynamic>}
 			</Match>
 			<Match when={block.kind === "list" ? block : null}>
-				{(value) => {
-					const Tag = value().ordered ? "ol" : "ul";
-					return (
-						<Tag>
-							<For each={value().items}>{(item) => <li>{inline(item)}</li>}</For>
-						</Tag>
-					);
-				}}
+				{(value) => (
+					<Dynamic component={value().ordered ? "ol" : "ul"}>
+						<For each={value().items}>{(item) => <li>{inline(item)}</li>}</For>
+					</Dynamic>
+				)}
 			</Match>
 			<Match when={block.kind === "quote" ? block : null}>
 				{(value) => <blockquote>{inline(value().text)}</blockquote>}

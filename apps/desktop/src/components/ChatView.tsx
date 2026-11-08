@@ -1,4 +1,4 @@
-import { For, Match, Show, Switch, createEffect, type Accessor } from "solid-js";
+import { ErrorBoundary, For, Match, Show, Switch, createEffect, type Accessor } from "solid-js";
 import type { ExtensionUiResponse } from "@gentle-shell/protocol";
 import { formatChord, isMac } from "../lib/keybindings";
 import { isNearBottom } from "../lib/scroll";
@@ -51,7 +51,15 @@ export function ChatView(props: {
 				</div>
 			</Show>
 
-			<For each={props.items()}>{(item) => <Row item={item} onAnswer={props.onAnswer} />}</For>
+			<For each={props.items()}>
+				{(item) => (
+					// One row that cannot render must not take the transcript with it: the error would otherwise abort
+					// every later update at the same place and leave the pane blank.
+					<ErrorBoundary fallback={(error) => <BrokenRow item={item} error={error} />}>
+						<Row item={item} onAnswer={props.onAnswer} />
+					</ErrorBoundary>
+				)}
+			</For>
 
 			<Show when={props.draft().length > 0}>
 				<article class="bubble assistant streaming">
@@ -68,6 +76,19 @@ export function ChatView(props: {
 					<span class="pulse" />
 					working… <span class="muted">Esc to interrupt</span>
 				</div>
+			</Show>
+		</div>
+	);
+}
+
+/** What stands in for a row that threw while rendering: its raw text, so nothing said is lost. */
+function BrokenRow(props: { item: ChatItem; error: unknown }) {
+	const text = (): string => ("text" in props.item ? props.item.text : "");
+	return (
+		<div class="notice warning" role="alert">
+			This message could not be displayed ({props.error instanceof Error ? props.error.message : String(props.error)}).
+			<Show when={text().length > 0}>
+				<pre class="broken-raw">{text()}</pre>
 			</Show>
 		</div>
 	);

@@ -1257,3 +1257,12 @@ button:focus-visible,
 .suggestions li.active {
 	background: var(--surface-3);
 }
+
+.broken-raw {
+	margin: 6px 0 0;
+	max-height: 220px;
+	overflow: auto;
+	white-space: pre-wrap;
+	font-family: var(--mono);
+	font-size: 11.5px;
+}
