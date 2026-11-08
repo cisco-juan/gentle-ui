@@ -1,6 +1,7 @@
 import { ErrorBoundary, For, Match, Show, Switch, createEffect, createMemo, createSignal, type Accessor } from "solid-js";
 import type { ExtensionUiResponse } from "@gentle-shell/protocol";
 import { activityOf } from "../lib/activity";
+import { shouldLoadOlder } from "../lib/history";
 import { formatChord, isMac } from "../lib/keybindings";
 import { followAfterWheel, isNearBottom } from "../lib/scroll";
 import type { ChatItem } from "../state/chat";
@@ -46,15 +47,44 @@ export function ChatView(props: {
 	items: Accessor<ChatItem[]>;
 	draft: Accessor<string>;
 	running: Accessor<boolean>;
+	/** True while the previous page of the transcript is being read. */
+	older: Accessor<boolean>;
+	/** True when the session file holds conversation before what is on screen. */
+	hasOlder: Accessor<boolean>;
+	onLoadOlder: () => void;
 	onAnswer: (requestId: string, response: ExtensionUiResponse) => void;
 }) {
 	let scroller: HTMLDivElement | undefined;
 	// Follow the stream only while the reader is at its end; scrolling up to read must stick.
 	let following = true;
+	/** Scroll height measured before an older page was asked for; null when none is on its way. */
+	let anchor: number | null = null;
+	/** The rows that were on screen at the last commit, so a prepend can be told from an append. */
+	let previous: readonly ChatItem[] = [];
 
 	createEffect(() => {
 		const items = props.items();
 		props.draft();
+		const before = previous;
+		previous = items;
+
+		// An older page lands at the top: everything that was on screen is still there, as its tail.
+		// Measuring the height around the prepend keeps the row the reader was reading under their eyes.
+		const landed =
+			anchor !== null &&
+			before.length > 0 &&
+			items.length > before.length &&
+			items[items.length - before.length] === before[0];
+		if (landed && anchor !== null) {
+			const height = anchor;
+			anchor = null;
+			if (scroller) {
+				const added = scroller.scrollHeight - height;
+				if (added > 0) scroller.scrollTop += added;
+			}
+			return;
+		}
+
 		// Sending a message is a request to see the answer, wherever the reader had scrolled to.
 		if (items[items.length - 1]?.kind === "user") following = true;
 		if (following && scroller) scroller.scrollTop = scroller.scrollHeight;
@@ -82,7 +112,13 @@ export function ChatView(props: {
 			class="chat"
 			ref={scroller}
 			onScroll={() => {
-				if (scroller) following = isNearBottom(scroller);
+				if (!scroller) return;
+				following = isNearBottom(scroller);
+				if (shouldLoadOlder({ scrollTop: scroller.scrollTop, loading: props.older(), hasOlder: props.hasOlder() })) {
+					// Measured before the page arrives, so the prepend can put the reader back where they were.
+					anchor = scroller.scrollHeight;
+					props.onLoadOlder();
+				}
 			}}
 			onWheel={(event) => {
 				// Settled by the gesture itself: a stream that lands between the wheel and the scroll event
@@ -90,6 +126,14 @@ export function ChatView(props: {
 				if (scroller) following = followAfterWheel(scroller, event.deltaY);
 			}}
 		>
+			<Show when={props.older()}>
+				{/* The top of the transcript while the turns before it are read; it leaves with the page. */}
+				<div class="skeleton-bubble" role="status" aria-busy="true" aria-label="Loading older messages">
+					<Skeleton width="38%" height="11px" />
+					<Skeleton width="72%" height="11px" />
+				</div>
+			</Show>
+
 			<Show when={props.loading()}>
 				<ChatSkeleton />
 			</Show>

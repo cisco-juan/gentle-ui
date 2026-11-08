@@ -2,6 +2,7 @@ import type {
 	ClientMessage,
 	ExtensionUiResponse,
 	GitStatus,
+	HistoryPage,
 	MemoryContextView,
 	MemoryProjectsView,
 	MemorySearchView,
@@ -132,6 +133,28 @@ export class BridgeClient {
 	sessions(): Promise<readonly SessionSummary[]> {
 		const id = this.#nextId();
 		return this.#request<readonly SessionSummary[]>({ kind: "sessions", id });
+	}
+
+	/**
+	 * One page of a session file's transcript, newest first.
+	 *
+	 * `before` is the cursor the previous page returned; leaving it out reads the newest page. The bridge
+	 * only reads files under the session directory it lists, so a path from anywhere else is refused.
+	 */
+	history(request: {
+		readonly sessionPath: string;
+		readonly before?: number;
+		readonly limit?: number;
+	}): Promise<HistoryPage> {
+		const id = this.#nextId();
+		return this.#request<HistoryPage>({
+			kind: "history",
+			id,
+			action: "page",
+			sessionPath: request.sessionPath,
+			...(request.before === undefined ? {} : { before: request.before }),
+			...(request.limit === undefined ? {} : { limit: request.limit }),
+		});
 	}
 
 	/** Branch and per-file changes of the bridge's workspace. Not thread-scoped. */
@@ -271,6 +294,10 @@ export class BridgeClient {
 		}
 		if (message.kind === "sessions") {
 			this.#settle(message.id, message.items);
+			return;
+		}
+		if (message.kind === "history") {
+			this.#settle(message.id, message.data);
 			return;
 		}
 		if (message.kind === "git" || message.kind === "fs") {

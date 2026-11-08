@@ -82,6 +82,54 @@ export interface SessionSummary {
 	readonly model?: string;
 }
 
+/** One tool call an assistant turn made, with the result the session file recorded for it. */
+export interface HistoryTool {
+	/** Pi's call id, so a result that arrived on a later line is attached to the call that made it. */
+	readonly id: string;
+	readonly name: string;
+	/** The arguments the file holds, parsed when they were JSON. */
+	readonly input: unknown;
+	readonly output: string;
+	readonly isError: boolean;
+}
+
+/**
+ * One turn of a transcript, as a session file records it.
+ *
+ * A user turn is text only. An assistant turn carries the reasoning behind it and every tool it called,
+ * so a reopened thread shows the work that produced its answers, not only the answers.
+ */
+export type HistoryEntry =
+	| {
+			readonly id: string;
+			readonly role: "user";
+			readonly text: string;
+			readonly thinking: null;
+			readonly model: null;
+	  }
+	| {
+			readonly id: string;
+			readonly role: "assistant";
+			readonly text: string;
+			readonly thinking: string | null;
+			readonly model: string | null;
+			readonly tools: readonly HistoryTool[];
+	  };
+
+/**
+ * One page of a session transcript, read newest first.
+ *
+ * `before` is the cursor for the next older page, and null once nothing older remains; `total` is how
+ * many conversation entries the file holds, so a reader can tell where in the transcript it is.
+ */
+export interface HistoryPage {
+	/** Oldest to newest inside the page. */
+	readonly entries: readonly HistoryEntry[];
+	/** Cursor to continue from, or null when this page reached the start of the conversation. */
+	readonly before: number | null;
+	readonly total: number;
+}
+
 /** One slash command, skill, or prompt template advertised by the agent. */
 export interface SlashCommand {
 	readonly name: string;
@@ -469,6 +517,15 @@ export type ClientMessage =
 			readonly response: ExtensionUiResponse;
 	  }
 	| { readonly kind: "sessions"; readonly id: string }
+	/** One page of a session file's transcript; the newest page when `before` is absent. */
+	| {
+			readonly kind: "history";
+			readonly id: string;
+			readonly action: "page";
+			readonly sessionPath: string;
+			readonly before?: number;
+			readonly limit?: number;
+	  }
 	/** A dropped or pasted file, base64 encoded, for the bridge to write into the agent home. */
 	| { readonly kind: "upload"; readonly id: string; readonly name: string; readonly dataBase64: string }
 	| { readonly kind: "git"; readonly id: string; readonly action: "status" }
@@ -532,6 +589,8 @@ export type ServerMessage =
 	| { readonly kind: "log"; readonly threadId: string; readonly line: string }
 	| { readonly kind: "exited"; readonly threadId: string; readonly code: number | null }
 	| { readonly kind: "sessions"; readonly id: string; readonly items: readonly SessionSummary[] }
+	/** Answer to `{kind:"history", action:"page"}`. */
+	| { readonly kind: "history"; readonly id: string; readonly data: HistoryPage }
 	/** Answer to `{kind:"upload"}`: where the file landed and how many bytes were written. */
 	| { readonly kind: "upload"; readonly id: string; readonly data: UploadedFile }
 	/** Answer to `{kind:"git", action:"status"}`. */

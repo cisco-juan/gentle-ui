@@ -1,5 +1,12 @@
 import { batch, createSignal, type Accessor } from "solid-js";
-import type { ExtensionUiRequest, ExtensionUiResponse, ServerMessage, SessionSummary, UploadedFile } from "@gentle-shell/protocol";
+import type {
+	ExtensionUiRequest,
+	ExtensionUiResponse,
+	HistoryEntry,
+	ServerMessage,
+	SessionSummary,
+	UploadedFile,
+} from "@gentle-shell/protocol";
 import { BridgeClient } from "../lib/bridge";
 import { checkCommand, shellAction, unknownCommandNotice } from "../lib/commands";
 import { setModelParams } from "../lib/models";
@@ -59,6 +66,10 @@ export interface ChatController {
 	readonly opening: Accessor<string | null>;
 	/** True while the model list is being asked for. */
 	readonly modelsLoading: Accessor<boolean>;
+	/** True while an older page of the transcript is on its way. */
+	readonly older: Accessor<boolean>;
+	/** True when the open session file holds conversation older than what is on screen. */
+	readonly hasOlder: Accessor<boolean>;
 	/** Session file the open thread is showing, `null` for a thread with no file yet. */
 	readonly activePath: Accessor<string | null>;
 	/** Live socket, so panels outside the transcript can ask their own questions. */
@@ -71,6 +82,8 @@ export interface ChatController {
 	removeAttachment(id: string): void;
 	/** Send any allow-listed Pi command through the open thread. */
 	invoke<T>(command: string, params?: Record<string, unknown>): Promise<T>;
+	/** Prepend the next older page of the open session, keeping what is already on screen. */
+	loadOlder(): Promise<void>;
 	connect(): Promise<void>;
 	/** Open a fresh connection and land back in the thread that was on screen. */
 	reconnect(): Promise<void>;
@@ -158,6 +171,8 @@ export function createChatController(options: { url: string; cwd: string }): Cha
 	const [threadsLoading, setThreadsLoading] = createSignal(true);
 	const [opening, setOpening] = createSignal<string | null>(null);
 	const [modelsLoading, setModelsLoading] = createSignal(false);
+	const [older, setOlder] = createSignal(false);
+	const [hasOlder, setHasOlder] = createSignal(false);
 	const [activePath, setActivePath] = createSignal<string | null>(null);
 	const [attachments, setAttachments] = createSignal<readonly Attachment[]>([]);
 
@@ -170,6 +185,10 @@ export function createChatController(options: { url: string; cwd: string }): Cha
 	let threadId: string | null = null;
 	let counter = 0;
 	let attachmentCounter = 0;
+	/** Cursor for the next older page; null once the start of the conversation is on screen. */
+	let historyCursor: number | null = null;
+	/** Entry ids already rendered, so a page that overlaps one on screen cannot duplicate it. */
+	const seenEntries = new Set<string>();
 
 	const nextId = (): string => `item-${++counter}`;
 
@@ -678,6 +697,7 @@ export function createChatController(options: { url: string; cwd: string }): Cha
 		const path = sessionFileOf(state);
 		batch(() => {
 			openThinking = null;
+			resetHistoryPaging();
 			setItems([]);
 			setDraft("");
 			setCost(0);
@@ -709,6 +729,7 @@ export function createChatController(options: { url: string; cwd: string }): Cha
 			if (wasCancelled(answer)) throw new Error("an extension cancelled switching threads");
 			batch(() => {
 				openThinking = null;
+				resetHistoryPaging();
 				setItems([]);
 				setDraft("");
 				setCost(0);
@@ -764,8 +785,45 @@ export function createChatController(options: { url: string; cwd: string }): Cha
 		}
 	}
 
-	/** Replay a session's conversation: the user and assistant text plus the thinking behind it. */
+	/** Forget the paging cursor: the thread on screen is no longer the one those pages belong to. */
+	function resetHistoryPaging(): void {
+		historyCursor = null;
+		seenEntries.clear();
+		setHasOlder(false);
+		setOlder(false);
+	}
+
+	/**
+	 * Replay a session's conversation, newest page first.
+	 *
+	 * Pi's `get_messages` answers with the tail of a session, so a long thread reopened as a handful of
+	 * rows. The session file holds every turn and the bridge pages it backwards; `get_messages` stays as
+	 * the fallback for a file the bridge cannot read, which is also what a fresh session is.
+	 */
 	async function loadHistory(active: BridgeClient, id: string): Promise<void> {
+		const path = activePath();
+		resetHistoryPaging();
+		if (path !== null) {
+			try {
+				const page = await active.history({ sessionPath: path });
+				// A page for a thread that is no longer on screen belongs nowhere.
+				if (current !== active || activePath() !== path) return;
+				const history = page.entries.filter((entry) => !seenEntries.has(entry.id)).flatMap((entry) => historyItems(entry));
+				historyCursor = page.before;
+				batch(() => {
+					setItems(history);
+					setHasOlder(page.before !== null);
+				});
+				return;
+			} catch {
+				// An unreadable file is not an empty thread: fall through to what Pi itself remembers.
+			}
+		}
+		await loadPiMessages(active, id);
+	}
+
+	/** What Pi returns for `get_messages`: the tail of the session, rendered as before paging existed. */
+	async function loadPiMessages(active: BridgeClient, id: string): Promise<void> {
 		let messages: readonly HistoryMessage[] = [];
 		try {
 			const listed = await active.command<{ messages?: readonly HistoryMessage[] }>(id, "get_messages");
@@ -798,6 +856,76 @@ export function createChatController(options: { url: string; cwd: string }): Cha
 			});
 		}
 		setItems(history);
+	}
+
+	/** The rows one history entry becomes, in the order the work happened. */
+	function historyItems(entry: HistoryEntry): ChatItem[] {
+		seenEntries.add(entry.id);
+		if (entry.role === "user") {
+			const text = entry.text.trim();
+			return text.length === 0 ? [] : [{ kind: "user", id: nextId(), text }];
+		}
+
+		const rows: ChatItem[] = [];
+		const thought = entry.thinking?.trim() ?? "";
+		if (thought.length > 0) rows.push({ kind: "thinking", id: nextId(), text: thought, status: "done" });
+		for (const tool of entry.tools) {
+			rows.push({
+				kind: "tool",
+				id: nextId(),
+				callId: tool.id,
+				name: tool.name,
+				args: tool.input,
+				output: tool.output,
+				status: tool.isError ? "error" : "done",
+			});
+		}
+		const text = entry.text.trim();
+		if (text.length > 0) {
+			rows.push({
+				kind: "assistant",
+				id: nextId(),
+				text,
+				...(entry.model === null ? {} : { model: entry.model }),
+			});
+		}
+		return rows;
+	}
+
+	/**
+	 * Prepend the next older page of the open session.
+	 *
+	 * Called when the reader has climbed to the top. A page already in flight is not asked for twice, and
+	 * an answer for a thread that has changed underneath is dropped; a failure leaves what is on screen
+	 * alone instead of putting an error between the reader and the turns already there.
+	 */
+	async function loadOlder(): Promise<void> {
+		const active = client;
+		const path = activePath();
+		const cursor = historyCursor;
+		if (active === null || threadId === null || path === null || cursor === null || older()) return;
+
+		setOlder(true);
+		try {
+			const page = await active.history({ sessionPath: path, before: cursor });
+			if (current !== active || activePath() !== path) return;
+			const prepended = page.entries
+				.filter((entry) => !seenEntries.has(entry.id))
+				.flatMap((entry) => historyItems(entry));
+			historyCursor = page.before;
+			batch(() => {
+				setItems((onScreen) => [...prepended, ...onScreen]);
+				setHasOlder(page.before !== null);
+				// The skeleton leaves in the same commit the view measures, so its height is not counted
+				// as new transcript and the reader does not jump past the row they were reading.
+				setOlder(false);
+			});
+		} catch {
+			// One failed read stops the retries; the turns already read stay on screen.
+			setHasOlder(false);
+		} finally {
+			setOlder(false);
+		}
 	}
 
 	function answerPermission(requestId: string, response: ExtensionUiResponse): void {
@@ -890,6 +1018,8 @@ function errorText(error: unknown): string {
 		threadsLoading,
 		opening,
 		modelsLoading,
+		older,
+		hasOlder,
 		activePath,
 		bridge: () => client,
 		currentThread: () => threadId,
@@ -897,6 +1027,7 @@ function errorText(error: unknown): string {
 		attachFiles,
 		removeAttachment,
 		invoke,
+		loadOlder,
 		connect,
 		reconnect: connect,
 		send,

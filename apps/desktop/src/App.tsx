@@ -265,6 +265,9 @@ export default function App() {
 					items={chat.items}
 					draft={chat.draft}
 					running={chat.running}
+					older={chat.older}
+					hasOlder={chat.hasOlder}
+					onLoadOlder={() => void chat.loadOlder()}
 					onAnswer={chat.answerPermission}
 				/>
 				<Composer

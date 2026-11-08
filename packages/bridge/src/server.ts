@@ -4,6 +4,7 @@ import { WebSocketServer, type WebSocket } from "ws";
 import type { ClientMessage, PermissionsResult, PiCommand, ProfilesResult, ServerMessage, SessionSummary } from "@gentle-shell/protocol";
 import { resolveCommand } from "./commands.ts";
 import { gitDiff, gitStatus } from "./git.ts";
+import { readHistoryPage } from "./history.ts";
 import { memoryContext, memoryProjects, memorySearch, type MemoryOptions } from "./memory.ts";
 import { permissionsSetDefault, permissionsStatus, type PermissionsOptions } from "./permissions.ts";
 import {
@@ -117,6 +118,24 @@ export async function startBridgeServer(options: BridgeServerOptions = {}): Prom
 			const list = options.sessions ?? listSessions;
 			try {
 				send(socket, { kind: "sessions", id: message.id, items: await list() });
+			} catch (error) {
+				send(socket, { kind: "error", id: message.id, message: errorMessage(error) });
+			}
+			return;
+		}
+
+		// A transcript page is read from the session file the rail lists, not from Pi: `get_messages` only
+		// ever answers with the tail, which is why a long thread used to reopen as three rows.
+		if (message.kind === "history") {
+			try {
+				send(socket, {
+					kind: "history",
+					id: message.id,
+					data: await readHistoryPage(message.sessionPath, {
+						...(message.before === undefined ? {} : { before: message.before }),
+						...(message.limit === undefined ? {} : { limit: message.limit }),
+					}),
+				});
 			} catch (error) {
 				send(socket, { kind: "error", id: message.id, message: errorMessage(error) });
 			}

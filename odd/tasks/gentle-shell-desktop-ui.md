@@ -5,7 +5,7 @@ pinned npm dependencies (`@earendil-works/pi-coding-agent`, `gentle-pi`), never 
 releases flow in as version bumps. The UI is a Tauri v2 shell (system webview) around a Vite frontend,
 with a Node bridge that drives the `pi` agent process.
 
-Status: T1-T8, T11-T18, T22, T23, T25 and T26 done; T9 has phase one; T10, T19-T21, T24 and T27 open. Bridge speaks to
+Status: T1-T8, T11-T18, T22, T23, T25-T27 done; T9 has phase one; T10, T19-T21, T24 and T28 open. Bridge speaks to
 `pi --mode rpc` over a tokenised loopback WebSocket and re-answers extension dialogs; 116 bridge and 125
 desktop tests green. See `docs/architecture.md`.
 
@@ -152,8 +152,15 @@ T26 [x] The transcript stays scrollable while a run is in flight: nothing transp
     itself, so a token arriving before the scroll event can no longer pin the reader back to the end. RED first,
     2 tests. Verified in the browser: with a menu open, `elementFromPoint` over the chat is the chat and no
     backdrop exists — the scroll itself could not be measured because that thread fits its pane (see T27).
-T27 [ ] Chat history loads progressively with the scroll instead of arriving whole or stopping at the last
+T27 [x] Chat history loads progressively with the scroll instead of arriving whole or stopping at the last
     iteration. S16
+    History is now read from the session JSONL, not from Pi's `get_messages` tail: `pageHistory()` pages backwards
+    with an entry cursor, folds each `toolResult` into the assistant turn that called it, and keeps the thinking
+    blocks. The bridge refuses any path outside the session roots it lists; `get_messages` stays as the fallback
+    and tells the UI there is nothing older. 12 bridge tests and 5 desktop tests, RED first. Verified in the
+    running app on the 1430-line thread: 3 rows before, 72 rows (3 users, 27 thinking blocks, 35 tools) after
+    opening, and scrolling up brought the next 40 entries to 152 rows while the reader stayed put.
+    Risk: item 3 (a new protocol family) — one reader, no unreadable path outside the session root.
 
 ## Log
 
@@ -318,6 +325,11 @@ What was built and why:
   which is the human-controlled path; the file now exists with the built-in default where it may not have existed
   before, so behaviour is unchanged. `VITE_BRIDGE_URL` did not override the endpoint in a plain browser run — that
   needs its own look before the next verification relies on it.
+
+T28 [ ] A thread opens showing the oldest row of its first page for a moment before it lands on the newest one:
+    the follow effect runs before the skeleton leaves and the height settles. Visible in the app (empty → top →
+    bottom within a few seconds); must not be a jump the reader can catch. S16
+    Found while verifying T27; measured, not guessed.
 
 L12. 2026-11-08. While verifying T26, opening the user's long thread ("Estmos buscando crear un UI para gen",
 hundreds of turns on disk) rendered three rows and no scroll: `loadHistory` asks Pi for `get_messages` and shows
