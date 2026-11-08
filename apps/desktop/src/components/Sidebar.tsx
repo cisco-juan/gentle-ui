@@ -1,4 +1,4 @@
-import { For, Show, createMemo, createSignal } from "solid-js";
+import { For, Show, createEffect, createMemo, createSignal } from "solid-js";
 import type { SessionSummary } from "@gentle-shell/protocol";
 import { groupThreads, relativeTime, type ThreadGroup } from "../lib/threads";
 import { Icon } from "./Icon";
@@ -23,7 +23,10 @@ export function Sidebar(props: {
 }) {
 	const [query, setQuery] = createSignal("");
 	const [searching, setSearching] = createSignal(false);
-	const [collapsed, setCollapsed] = createSignal<ReadonlySet<string>>(new Set());
+	// Groups start folded: 76 threads all expanded is a wall, not a workspace. The group holding the
+	// open thread (or the newest one) opens on first paint.
+	const [expanded, setExpanded] = createSignal<ReadonlySet<string>>(new Set());
+	let seeded = false;
 
 	const filtered = createMemo(() => {
 		const needle = query().trim().toLowerCase();
@@ -35,8 +38,25 @@ export function Sidebar(props: {
 
 	const groups = createMemo(() => groupThreads(filtered()));
 
+	createEffect(() => {
+		const list = groups();
+		if (list.length === 0) return;
+
+		const active = list.find((group) => group.items.some((thread) => thread.path === props.activePath));
+		if (!seeded) {
+			seeded = true;
+			const first = active ?? list[0];
+			if (first) setExpanded(new Set([first.cwd]));
+			return;
+		}
+		// Following a thread that lives in a folded group unfolds it instead of hiding the selection.
+		if (active && !expanded().has(active.cwd)) {
+			setExpanded((current) => new Set([...current, active.cwd]));
+		}
+	});
+
 	function toggleGroup(cwd: string): void {
-		setCollapsed((current) => {
+		setExpanded((current) => {
 			const next = new Set(current);
 			if (next.has(cwd)) next.delete(cwd);
 			else next.add(cwd);
@@ -94,7 +114,6 @@ export function Sidebar(props: {
 			<div class="sidebar-scroll">
 				<div class="section-head">
 					<span>Threads</span>
-					<span class="section-count">{filtered().length}</span>
 				</div>
 
 				<Show when={groups().length > 0} fallback={<p class="rail-empty">No saved threads yet.</p>}>
@@ -103,7 +122,7 @@ export function Sidebar(props: {
 							<ThreadGroupView
 								group={group}
 								activePath={props.activePath}
-								collapsed={collapsed().has(group.cwd)}
+								collapsed={!expanded().has(group.cwd)}
 								onToggle={() => toggleGroup(group.cwd)}
 								onSelect={props.onSelectThread}
 							/>
@@ -135,10 +154,8 @@ function ThreadGroupView(props: {
 	return (
 		<div class="thread-group">
 			<button class="group-head" onClick={() => props.onToggle()}>
-				<Icon name="chevron" class={`chevron ${props.collapsed ? "closed" : ""}`} size={12} />
-				<Icon name="folder" size={13} />
+				<Icon name="chevron" class={`chevron ${props.collapsed ? "closed" : ""}`} size={11} />
 				<span class="group-label">{props.group.label}</span>
-				<span class="group-count">{props.group.items.length}</span>
 			</button>
 
 			<Show when={!props.collapsed}>

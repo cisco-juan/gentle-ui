@@ -78,7 +78,7 @@ kbd {
 
 .app {
 	display: grid;
-	grid-template-columns: 248px minmax(0, 1fr);
+	grid-template-columns: 268px minmax(0, 1fr);
 	height: 100%;
 	overflow: hidden;
 }
@@ -107,13 +107,13 @@ main {
 	display: flex;
 	align-items: center;
 	gap: 7px;
-	padding: 2px 4px 8px;
+	padding: 2px 3px 10px;
 }
 
 .brand-text {
-	font-size: 12.5px;
-	color: var(--text-soft);
-	letter-spacing: 0.2px;
+	font-size: 12px;
+	color: var(--muted);
+	letter-spacing: 0.3px;
 }
 
 .icon-btn {
@@ -181,11 +181,11 @@ main {
 	display: flex;
 	align-items: center;
 	gap: 6px;
-	padding: 2px 8px 6px;
-	font-size: 10.5px;
-	letter-spacing: 0.7px;
+	padding: 0 8px 7px;
+	font-size: 9.5px;
+	letter-spacing: 1px;
 	text-transform: uppercase;
-	color: var(--muted);
+	color: color-mix(in srgb, var(--muted) 78%, transparent);
 }
 
 .section-count {
@@ -202,28 +202,35 @@ main {
 }
 
 .thread-group {
-	margin-bottom: 6px;
+	margin-bottom: 2px;
 }
 
 .group-head {
 	display: flex;
 	align-items: center;
-	gap: 6px;
+	gap: 5px;
 	width: 100%;
-	padding: 5px 8px;
+	height: 24px;
+	padding: 0 8px 0 6px;
 	border-radius: 6px;
 	color: var(--text-soft);
 	font-size: 12px;
+	letter-spacing: 0.1px;
 	text-align: left;
 }
 
 .group-head:hover {
 	background: var(--surface-2);
+	color: var(--text);
+}
+
+.group-head .chevron {
+	color: var(--muted);
+	opacity: 0.75;
 }
 
 .chevron {
 	transition: transform 120ms ease;
-	opacity: 0.6;
 }
 
 .chevron.closed {
@@ -236,22 +243,18 @@ main {
 	white-space: nowrap;
 }
 
-.group-count {
-	margin-left: auto;
-	font-size: 10.5px;
-	font-variant-numeric: tabular-nums;
-	color: var(--muted);
-}
+
 
 .thread {
 	display: flex;
 	align-items: center;
 	gap: 7px;
 	width: 100%;
-	padding: 5px 8px 5px 22px;
+	height: 25px;
+	padding: 0 8px 0 18px;
 	border-radius: 6px;
-	color: var(--text-soft);
-	font-size: 12.5px;
+	color: #cfc6d4;
+	font-size: 12px;
 	text-align: left;
 }
 
@@ -279,15 +282,17 @@ main {
 
 .thread-title {
 	flex: 1;
+	min-width: 0;
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
 }
 
 .thread-time {
-	font-size: 10.5px;
-	color: var(--muted);
+	font-size: 10px;
+	color: color-mix(in srgb, var(--muted) 85%, transparent);
 	font-variant-numeric: tabular-nums;
+	padding-left: 4px;
 }
 
 .sidebar-foot {
@@ -1059,4 +1064,49 @@ main {
 	letter-spacing: 0.6px;
 	color: var(--muted);
 	opacity: 0.8;
+}
+
+/* ---------- scrollbars ---------- */
+
+.sidebar-scroll,
+.chat,
+.popover,
+.suggestions,
+.sheet-body,
+.tool pre {
+	scrollbar-width: thin;
+	scrollbar-color: var(--surface-3) transparent;
+}
+
+.sidebar-scroll::-webkit-scrollbar,
+.chat::-webkit-scrollbar,
+.popover::-webkit-scrollbar,
+.suggestions::-webkit-scrollbar,
+.sheet-body::-webkit-scrollbar,
+.tool pre::-webkit-scrollbar {
+	width: 8px;
+	height: 8px;
+}
+
+.sidebar-scroll::-webkit-scrollbar-thumb,
+.chat::-webkit-scrollbar-thumb,
+.popover::-webkit-scrollbar-thumb,
+.suggestions::-webkit-scrollbar-thumb,
+.sheet-body::-webkit-scrollbar-thumb,
+.tool pre::-webkit-scrollbar-thumb {
+	background: var(--surface-3);
+	border-radius: 8px;
+	border: 2px solid transparent;
+	background-clip: content-box;
+}
+
+.sidebar-scroll::-webkit-scrollbar-thumb:hover,
+.chat::-webkit-scrollbar-thumb:hover {
+	background: #33283a;
+	background-clip: content-box;
+}
+
+.sidebar-scroll::-webkit-scrollbar-track,
+.chat::-webkit-scrollbar-track {
+	background: transparent;
 }

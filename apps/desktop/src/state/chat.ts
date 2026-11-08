@@ -34,6 +34,11 @@ export interface ChatController {
 	readonly threads: Accessor<readonly SessionSummary[]>;
 	/** Session file the open thread is showing, `null` for a thread with no file yet. */
 	readonly activePath: Accessor<string | null>;
+	/** Live socket, so panels outside the transcript can ask their own questions. */
+	readonly bridge: Accessor<BridgeClient | null>;
+	readonly currentThread: Accessor<string | null>;
+	/** Send any allow-listed Pi command through the open thread. */
+	invoke<T>(command: string, params?: Record<string, unknown>): Promise<T>;
 	connect(): Promise<void>;
 	send(text: string): Promise<void>;
 	interrupt(): Promise<void>;
@@ -425,6 +430,11 @@ export function createChatController(options: { url: string; cwd: string }): Cha
 		if (command) await runCommand(command.name);
 	}
 
+	function invoke<T>(command: string, params: Record<string, unknown> = {}): Promise<T> {
+		if (!client || !threadId) return Promise.reject(new Error("the agent is not connected"));
+		return client.command<T>(threadId, command, params);
+	}
+
 	return {
 		items,
 		draft,
@@ -439,6 +449,9 @@ export function createChatController(options: { url: string; cwd: string }): Cha
 		permissionMode,
 		threads,
 		activePath,
+		bridge: () => client,
+		currentThread: () => threadId,
+		invoke,
 		connect,
 		send,
 		interrupt,
