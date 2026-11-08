@@ -1,7 +1,8 @@
-import { ErrorBoundary, For, Match, Show, Switch, createEffect, type Accessor } from "solid-js";
+import { ErrorBoundary, For, Match, Show, Switch, createEffect, createMemo, createSignal, type Accessor } from "solid-js";
 import type { ExtensionUiResponse } from "@gentle-shell/protocol";
+import { activityOf } from "../lib/activity";
 import { formatChord, isMac } from "../lib/keybindings";
-import { isNearBottom } from "../lib/scroll";
+import { followAfterWheel, isNearBottom } from "../lib/scroll";
 import type { ChatItem } from "../state/chat";
 import { RichText } from "./RichText";
 import { PermissionCard } from "./PermissionCard";
@@ -15,6 +16,7 @@ type AssistantItem = Extract<ChatItem, { kind: "assistant" }>;
 type ToolItem = Extract<ChatItem, { kind: "tool" }>;
 type PermissionItem = Extract<ChatItem, { kind: "permission" }>;
 type NoticeItem = Extract<ChatItem, { kind: "notice" }>;
+type ThinkingItem = Extract<ChatItem, { kind: "thinking" }>;
 
 /** The shape of a conversation, shown while a thread is being opened or the agent is still starting. */
 function ChatSkeleton() {
@@ -58,12 +60,34 @@ export function ChatView(props: {
 		if (following && scroller) scroller.scrollTop = scroller.scrollHeight;
 	});
 
+	const activity = createMemo(() => {
+		const items = props.items();
+		const last = items[items.length - 1] ?? null;
+		return activityOf({
+			running: props.running(),
+			draft: props.draft(),
+			lastKind: last?.kind ?? null,
+			lastName: last?.kind === "tool" ? last.name : undefined,
+			lastStatus:
+				last?.kind === "tool" || last?.kind === "thinking"
+					? last.status
+					: last?.kind === "permission"
+						? "running"
+						: undefined,
+		});
+	});
+
 	return (
 		<div
 			class="chat"
 			ref={scroller}
 			onScroll={() => {
 				if (scroller) following = isNearBottom(scroller);
+			}}
+			onWheel={(event) => {
+				// Settled by the gesture itself: a stream that lands between the wheel and the scroll event
+				// would otherwise pin the reader back to the end and make scrolling feel blocked.
+				if (scroller) following = followAfterWheel(scroller, event.deltaY);
 			}}
 		>
 			<Show when={props.loading()}>
@@ -100,11 +124,53 @@ export function ChatView(props: {
 				</article>
 			</Show>
 
-			<Show when={props.running() && props.draft().length === 0}>
-				<div class="working">
+			<Show when={activity()}>{(line) => (
+				<div class="working" role="status" aria-live="polite">
 					<span class="pulse" />
-					working… <span class="muted">Esc to interrupt</span>
+					{line()}… <span class="muted">Esc to interrupt</span>
 				</div>
+			)}</Show>
+		</div>
+	);
+}
+
+/** How much of the reasoning the header shows: enough to recognise it, not enough to read it there. */
+const THINKING_PEEK = 120;
+
+/**
+ * The first line of the reasoning, flattened and cut to a header's width.
+ *
+ * Reasoning arrives in fragments and can be empty, all newlines, or a single unbroken line, so the
+ * peek is derived rather than sliced: a header that wraps or throws stops being a header.
+ */
+function thinkingPeek(text: string): string {
+	const first = text.split("\n").find((line) => line.trim().length > 0) ?? "";
+	const flat = first.trim().replace(/\s+/g, " ");
+	return flat.length > THINKING_PEEK ? `${flat.slice(0, THINKING_PEEK).trimEnd()}…` : flat;
+}
+
+/**
+ * The model's reasoning: a summary line while it streams, the whole text on request.
+ *
+ * A run that is still thinking opens it, because the reader is waiting on it; a finished block
+ * collapses, because the answer is what they came for and reasoning is the working behind it.
+ */
+function ThinkingBlock(props: { item: ThinkingItem }) {
+	const [open, setOpen] = createSignal(props.item.status === "running");
+	const peek = (): string => thinkingPeek(props.item.text);
+	const chars = (): number => props.item.text.trim().length;
+
+	return (
+		<div class="thinking" classList={{ running: props.item.status === "running" }}>
+			<button class="thinking-head" aria-expanded={open()} onClick={() => setOpen((current) => !current)}>
+				<span class="chevron-static">{open() ? "▾" : "▸"}</span>
+				<span class="thinking-label">thinking</span>
+				<span class="thinking-peek">{peek()}</span>
+				<span class="thinking-count">{chars()} chars</span>
+			</button>
+
+			<Show when={open()}>
+				<pre class="thinking-body">{props.item.text}</pre>
 			</Show>
 		</div>
 	);
@@ -154,6 +220,10 @@ function Row(props: { item: ChatItem; onAnswer: (requestId: string, response: Ex
 						<RichText text={assistant().text} />
 					</article>
 				)}
+			</Match>
+
+			<Match when={item().kind === "thinking" ? (item() as ThinkingItem) : undefined}>
+				{(thinking) => <ThinkingBlock item={thinking()} />}
 			</Match>
 
 			<Match when={item().kind === "tool" ? (item() as ToolItem) : undefined}>

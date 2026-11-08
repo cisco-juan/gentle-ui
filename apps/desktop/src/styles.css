@@ -658,6 +658,67 @@ main {
 	overflow: hidden;
 }
 
+/* ---------- thinking blocks ---------- */
+
+/* Reasoning is the working behind the answer: same surface and mono face as a tool card, quieter. */
+.thinking {
+	border-radius: 8px;
+	background: var(--surface);
+	overflow: hidden;
+	font-family: var(--mono);
+	font-size: 11.5px;
+}
+
+.thinking-head {
+	display: flex;
+	align-items: center;
+	gap: 9px;
+	width: 100%;
+	padding: 8px 11px;
+	text-align: left;
+}
+
+.thinking-head:hover {
+	background: var(--surface-2);
+}
+
+.thinking-label {
+	color: var(--muted);
+	letter-spacing: 0.4px;
+}
+
+.thinking.running .thinking-label {
+	color: var(--warn);
+}
+
+/* One line, whatever the reasoning does: the header states there is something, not what it says. */
+.thinking-peek {
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	color: var(--muted);
+	opacity: 0.85;
+}
+
+.thinking-count {
+	font-size: 10.5px;
+	color: var(--muted);
+	white-space: nowrap;
+}
+
+.thinking-body {
+	margin: 0;
+	padding: 0 11px 9px;
+	max-height: 260px;
+	overflow: auto;
+	white-space: pre-wrap;
+	word-break: break-word;
+	line-height: 1.5;
+	color: var(--text-soft);
+}
+
 /* ---------- permission cards ---------- */
 
 .permission {
@@ -903,12 +964,6 @@ main {
 }
 
 /* ---------- popovers ---------- */
-
-.menu-backdrop {
-	position: fixed;
-	inset: 0;
-	z-index: 8;
-}
 
 .popover {
 	position: absolute;

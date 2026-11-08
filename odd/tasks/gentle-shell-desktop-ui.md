@@ -5,7 +5,7 @@ pinned npm dependencies (`@earendil-works/pi-coding-agent`, `gentle-pi`), never 
 releases flow in as version bumps. The UI is a Tauri v2 shell (system webview) around a Vite frontend,
 with a Node bridge that drives the `pi` agent process.
 
-Status: T1-T8, T11-T18 and T22 done; T9 has phase one; T10, T19-T21 and T23-T27 open. Bridge speaks to
+Status: T1-T8, T11-T18, T22, T23, T25 and T26 done; T9 has phase one; T10, T19-T21, T24 and T27 open. Bridge speaks to
 `pi --mode rpc` over a tokenised loopback WebSocket and re-answers extension dialogs; 116 bridge and 125
 desktop tests green. See `docs/architecture.md`.
 
@@ -131,13 +131,27 @@ T22 [x] The permission chip writes the default new threads start in, offers ever
     the browser against the running bridge: chip reads `normal`, four rows, `normal` marked current, `yolo`
     refused with its command, `auto` written and marked current after the new thread. 125 desktop tests green.
 
-T23 [ ] Transcript shows the model's thinking chain, collapsed by default, and a reopened thread keeps it. S12
+T23 [x] Transcript shows the model's thinking chain, collapsed by default, and a reopened thread keeps it. S12
+    `streamIntent()` decides text vs thinking vs nothing from the stream; `thinking_delta` lands in one item per
+    block, `thinking_end` closes it, and `thinkingOf()` replays the block for a reopened thread. RED first
+    (missing export), 13/13 lib tests green. Verified in the running app: a real turn rendered
+    "thinking · <peek> · 230 chars" above its answer. Route: inline plus one writer for the component and
+    styles. Risk none.
 T24 [ ] Tool calls that touch files render a file-change card with the path and the change; the raw argument dump
     stops being the only view. S13
-T25 [ ] A run is visibly in progress at every moment (thinking, tool running, streaming), not only while the draft
+T25 [x] A run is visibly in progress at every moment (thinking, tool running, streaming), not only while the draft
     is empty. S14
-T26 [ ] The transcript stays scrollable while a run is in flight: nothing transparent covers it, and
+    `activityOf()` names what is happening ("thinking", "running bash", "writing the answer", "waiting for your
+    approval"), and the transcript line is no longer gated on an empty draft. RED first, 4 tests. Route and risk:
+    same commit as T23.
+T26 [x] The transcript stays scrollable while a run is in flight: nothing transparent covers it, and
     follow-the-stream never fights the reader. S15
+    Two causes, both fixed: `.menu-backdrop` was `position: fixed; inset: 0` over the whole app, so any open
+    composer menu swallowed the wheel; it is gone, replaced by a capture-phase `pointerdown` listener that closes
+    the menu without covering anything. And `followAfterWheel()` settles "stop following" on the wheel gesture
+    itself, so a token arriving before the scroll event can no longer pin the reader back to the end. RED first,
+    2 tests. Verified in the browser: with a menu open, `elementFromPoint` over the chat is the chat and no
+    backdrop exists — the scroll itself could not be measured because that thread fits its pane (see T27).
 T27 [ ] Chat history loads progressively with the scroll instead of arriving whole or stopping at the last
     iteration. S16
 
@@ -304,6 +318,12 @@ What was built and why:
   which is the human-controlled path; the file now exists with the built-in default where it may not have existed
   before, so behaviour is unchanged. `VITE_BRIDGE_URL` did not override the endpoint in a plain browser run — that
   needs its own look before the next verification relies on it.
+
+L12. 2026-11-08. While verifying T26, opening the user's long thread ("Estmos buscando crear un UI para gen",
+hundreds of turns on disk) rendered three rows and no scroll: `loadHistory` asks Pi for `get_messages` and shows
+what comes back, and what comes back is the tail. That is the user's "el chat solo muestra la ultima iteracion",
+now reproduced. T27 needs paging from the session file the bridge already indexes for the rail, not a larger
+`get_messages` request.
 
 L11. 2026-11-08. The user ran the app against real work and asked for four things, verbatim:
 "la sesion en la Terminal muestra informacion como el codigo, la cadenas de pensamientos, n la UI solo esta mostrando

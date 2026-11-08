@@ -16,3 +16,15 @@ const NEAR_BOTTOM_PX = 80;
 export function isNearBottom(metrics: ScrollMetrics): boolean {
 	return metrics.scrollHeight - metrics.scrollTop - metrics.clientHeight <= NEAR_BOTTOM_PX;
 }
+
+/**
+ * Whether to keep following after a wheel gesture.
+ *
+ * Waiting for the scroll event to report the new position loses a race: a token can arrive first and
+ * pin the reader back to the end, so scrolling up during a fast stream feels blocked. A wheel up is
+ * the reader asking to look back, and it settles the question immediately; scrolling back down
+ * returns to following only once the end is in sight again.
+ */
+export function followAfterWheel(metrics: ScrollMetrics, deltaY: number): boolean {
+	return deltaY < 0 ? false : isNearBottom(metrics);
+}

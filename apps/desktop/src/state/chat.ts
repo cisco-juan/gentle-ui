@@ -18,11 +18,14 @@ import {
 	type FileLike,
 	type PromptImage,
 } from "../lib/attachments";
-import { textOf, type AssistantMessage, type AssistantStreamEvent, type ContentBlock, type PiEnvelope, type ToolResultPayload } from "../lib/records";
+import { textOf, thinkingOf, type AssistantMessage, type AssistantStreamEvent, type ContentBlock, type PiEnvelope, type ToolResultPayload } from "../lib/records";
+import { streamIntent } from "../lib/stream";
 
 export type ChatItem =
 	| { kind: "user"; id: string; text: string }
 	| { kind: "assistant"; id: string; text: string; model?: string; cost?: number }
+	/** The model's own reasoning, streamed before its answer; kept so a reopened thread shows the work. */
+	| { kind: "thinking"; id: string; text: string; status: "running" | "done" }
 	| {
 			kind: "tool";
 			id: string;
@@ -194,6 +197,35 @@ export function createChatController(options: { url: string; cwd: string }): Cha
 		);
 	}
 
+	/** The thinking block still streaming: its deltas land in one item instead of one item per token. */
+	let openThinking: string | null = null;
+
+	function appendThinking(delta: string): void {
+		const id = openThinking;
+		if (id === null) {
+			const created = nextId();
+			openThinking = created;
+			// Committing the reply first keeps the transcript in the order the work happened.
+			flushDraft();
+			append({ kind: "thinking", id: created, text: delta, status: "running" });
+			return;
+		}
+		setItems((current) =>
+			current.map((item) =>
+				item.kind === "thinking" && item.id === id ? { ...item, text: item.text + delta } : item,
+			),
+		);
+	}
+
+	function closeThinking(): void {
+		const id = openThinking;
+		if (id === null) return;
+		openThinking = null;
+		setItems((current) =>
+			current.map((item) => (item.kind === "thinking" && item.id === id ? { ...item, status: "done" } : item)),
+		);
+	}
+
 	/** Commit streaming text before anything else lands below it. */
 	function flushDraft(): void {
 		const text = draft().trim();
@@ -245,6 +277,7 @@ export function createChatController(options: { url: string; cwd: string }): Cha
 		}
 		if (type === "agent_settled") {
 			batch(() => {
+				closeThinking();
 				flushDraft();
 				setRunning(false);
 			});
@@ -252,14 +285,27 @@ export function createChatController(options: { url: string; cwd: string }): Cha
 		}
 		if (type === "message_start") {
 			const message_ = record.message as AssistantMessage | undefined;
-			if (message_?.role === "assistant") setDraft("");
+			if (message_?.role === "assistant") {
+				closeThinking();
+				setDraft("");
+			}
 			return;
 		}
 		if (type === "message_update") {
 			const update = record.assistantMessageEvent as AssistantStreamEvent | undefined;
-			if (update?.type === "text_delta" && typeof update.delta === "string") {
-				setDraft((current) => current + update.delta);
+			if (update === undefined) return;
+			// A thinking block ends before the answer starts; closing it here keeps the transcript honest
+			// about what is still in flight.
+			if (update.type === "thinking_end") {
+				closeThinking();
+				return;
 			}
+			const intent = streamIntent(update);
+			if (intent.kind === "text") {
+				setDraft((current) => current + intent.delta);
+				return;
+			}
+			if (intent.kind === "thinking") appendThinking(intent.delta);
 			return;
 		}
 		if (type === "message_end") {
@@ -270,6 +316,7 @@ export function createChatController(options: { url: string; cwd: string }): Cha
 			if (typeof spent === "number") setCost((current) => current + spent);
 			if (ended.model) setModel(ended.model);
 			batch(() => {
+				closeThinking();
 				if (text.trim().length > 0) {
 					append({
 						kind: "assistant",
@@ -630,6 +677,7 @@ export function createChatController(options: { url: string; cwd: string }): Cha
 		const state = await active.command<unknown>(id, "get_state").catch(() => null);
 		const path = sessionFileOf(state);
 		batch(() => {
+			openThinking = null;
 			setItems([]);
 			setDraft("");
 			setCost(0);
@@ -660,6 +708,7 @@ export function createChatController(options: { url: string; cwd: string }): Cha
 			const answer = await active.command(id, "switch_session", { sessionPath: path });
 			if (wasCancelled(answer)) throw new Error("an extension cancelled switching threads");
 			batch(() => {
+				openThinking = null;
 				setItems([]);
 				setDraft("");
 				setCost(0);
@@ -715,7 +764,7 @@ export function createChatController(options: { url: string; cwd: string }): Cha
 		}
 	}
 
-	/** Replay a session's user and assistant text; system and tool traffic stays out of the pane. */
+	/** Replay a session's conversation: the user and assistant text plus the thinking behind it. */
 	async function loadHistory(active: BridgeClient, id: string): Promise<void> {
 		let messages: readonly HistoryMessage[] = [];
 		try {
@@ -729,11 +778,17 @@ export function createChatController(options: { url: string; cwd: string }): Cha
 		for (const message of messages) {
 			if (message.role !== "user" && message.role !== "assistant") continue;
 			const text = textOf(message.content).trim();
-			if (text.length === 0) continue;
 			if (message.role === "user") {
+				if (text.length === 0) continue;
 				history.push({ kind: "user", id: nextId(), text });
 				continue;
 			}
+			// A reopened thread shows the same work the live one did, in the same order.
+			const thought = thinkingOf(message.content).trim();
+			if (thought.length > 0) {
+				history.push({ kind: "thinking", id: nextId(), text: thought, status: "done" });
+			}
+			if (text.length === 0) continue;
 			const model_ = message.model;
 			history.push({
 				kind: "assistant",
