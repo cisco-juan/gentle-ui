@@ -719,6 +719,96 @@ main {
 	color: var(--text-soft);
 }
 
+/* ---------- file change cards ---------- */
+
+/* A changed file is its own row: same surface and mono face as a tool card, but the change is the content. */
+.file-change {
+	border-radius: 8px;
+	background: var(--surface);
+	overflow: hidden;
+	font-family: var(--mono);
+	font-size: 11.5px;
+}
+
+.file-change-head {
+	display: flex;
+	align-items: center;
+	gap: 9px;
+	width: 100%;
+	padding: 8px 11px;
+	text-align: left;
+}
+
+.file-change-head:hover {
+	background: var(--surface-2);
+}
+
+/* The reader scans for the file, so the name keeps its width and only the directory gives way. */
+.file-change-path {
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	color: var(--text);
+}
+
+.file-change-dir {
+	display: inline-block;
+	max-width: 55%;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	vertical-align: bottom;
+	color: var(--muted);
+}
+
+.file-change-stats {
+	font-size: 10.5px;
+	color: var(--muted);
+	white-space: nowrap;
+}
+
+.file-change-body {
+	margin: 0;
+	padding: 0 11px 9px;
+	max-height: 320px;
+	overflow: auto;
+	white-space: pre-wrap;
+	word-break: break-word;
+	line-height: 1.5;
+	color: var(--text-soft);
+}
+
+/* The rest of a long file is a count, not more lines: a written file has no sides to show. */
+.file-change-more {
+	padding: 0 11px 9px;
+	font-size: 10.5px;
+}
+
+/* One gutter per side, in the same muted weight as the rest of the chrome. */
+.diff-line {
+	display: block;
+	padding-left: 14px;
+	text-indent: -14px;
+}
+
+.diff-gutter {
+	display: inline-block;
+	width: 14px;
+	text-indent: 0;
+	color: var(--muted);
+	user-select: none;
+}
+
+.diff-line.remove {
+	color: color-mix(in srgb, var(--error) 70%, var(--text-soft));
+}
+
+.diff-line.add {
+	color: color-mix(in srgb, var(--ok) 62%, var(--text-soft));
+}
+
 /* ---------- permission cards ---------- */
 
 .permission {

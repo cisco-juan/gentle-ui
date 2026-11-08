@@ -1,4 +1,6 @@
 import { Show, createSignal } from "solid-js";
+import { fileChangeOf, writeTextOf } from "../lib/file-change";
+import { FileChangeCard } from "./FileChangeCard";
 import type { ChatItem } from "../state/chat";
 
 type ToolItem = Extract<ChatItem, { kind: "tool" }>;
@@ -9,8 +11,42 @@ type ToolItem = Extract<ChatItem, { kind: "tool" }>;
  */
 const cardState = new Map<string, { open: boolean; args: boolean }>();
 
-/** One tool call: a collapsed summary line that expands into its arguments and output. */
+/**
+ * One tool call. A call that changed a file shows the file instead of a name: the path and the change
+ * are what the reader came for. Every other call keeps the summary line that expands into its
+ * arguments and output.
+ */
 export function ToolCard(props: { tool: ToolItem }) {
+	const change = () => fileChangeOf(props.tool.name, props.tool.args);
+	return (
+		<Show when={change()} fallback={<ToolRow tool={props.tool} />}>
+			{(fileChange) => (
+				<div class={`tool ${props.tool.status}`}>
+					<FileChangeCard
+						id={props.tool.id}
+						change={fileChange()}
+						content={writeTextOf(props.tool.args)}
+						state={<ToolState tool={props.tool} />}
+					/>
+				</div>
+			)}
+		</Show>
+	);
+}
+
+/** Every tool row states how it ended, in the same place, changed file or not. */
+function ToolState(props: { tool: ToolItem }) {
+	return (
+		<span class="tool-state">
+			<Show when={props.tool.status === "running"} fallback={<StatusLabel status={props.tool.status} durationMs={props.tool.durationMs} />}>
+				running
+			</Show>
+		</span>
+	);
+}
+
+/** A call that changed nothing: the name, a one-value summary, and its output on request. */
+function ToolRow(props: { tool: ToolItem }) {
 	const id = props.tool.id;
 	const [open, setOpenState] = createSignal(cardState.get(id)?.open ?? false);
 	const [showArgs, setShowArgsState] = createSignal(cardState.get(id)?.args ?? false);
@@ -41,11 +77,7 @@ export function ToolCard(props: { tool: ToolItem }) {
 				<span class="chevron-static">{open() ? "▾" : "▸"}</span>
 				<span class="tool-name">{props.tool.name}</span>
 				<span class="tool-summary">{summary()}</span>
-				<span class="tool-state">
-					<Show when={props.tool.status === "running"} fallback={<StatusLabel status={props.tool.status} durationMs={props.tool.durationMs} />}>
-						running
-					</Show>
-				</span>
+				<ToolState tool={props.tool} />
 			</button>
 
 			<Show when={open()}>
