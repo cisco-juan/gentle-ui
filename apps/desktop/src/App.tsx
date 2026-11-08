@@ -198,7 +198,7 @@ export default function App() {
 
 			<Splitter
 				edge="rail"
-				width={() => layout.state().railWidth}
+				width={() => layout.effective().railWidth}
 				onResize={(width) => layout.resizeRail(width)}
 				onReset={() => layout.reset()}
 			/>
@@ -238,7 +238,7 @@ export default function App() {
 
 			<Splitter
 				edge="inspector"
-				width={() => layout.state().inspectorWidth}
+				width={() => layout.effective().inspectorWidth}
 				onResize={(width) => layout.resizeInspector(width)}
 				onReset={() => layout.reset()}
 			/>

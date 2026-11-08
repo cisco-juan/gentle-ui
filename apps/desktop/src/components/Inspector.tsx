@@ -52,6 +52,15 @@ export function Inspector(props: { chat: ChatControllerLike; onClose?: () => voi
 		else void memory.refresh();
 	}
 
+	// True while the tab strip has more tabs past its right edge, so the fade only shows when it is true.
+	const [moreTabs, setMoreTabs] = createSignal(false);
+	let tabStrip: HTMLDivElement | undefined;
+
+	function measureTabs(): void {
+		if (!tabStrip) return;
+		setMoreTabs(tabStrip.scrollLeft + tabStrip.clientWidth < tabStrip.scrollWidth - 1);
+	}
+
 	function activeTab(id: InspectorTab | OwnedTab): boolean {
 		const owned = ownedTab();
 		if (id === "review" || id === "memory") return owned === id;
@@ -61,7 +70,19 @@ export function Inspector(props: { chat: ChatControllerLike; onClose?: () => voi
 	return (
 		<aside class="inspector" aria-label="Inspector">
 			<header class="inspector-head">
-				<div class="inspector-tabs" role="tablist" aria-label="Inspector tabs">
+				<div
+					class={`inspector-tabs${moreTabs() ? " more" : ""}`}
+					role="tablist"
+					aria-label="Inspector tabs"
+					onScroll={measureTabs}
+					ref={(element) => {
+						tabStrip = element;
+						// The panel is resized by dragging, so the overflow has to be re-read as its width changes.
+						const observer = new ResizeObserver(measureTabs);
+						observer.observe(element);
+						onCleanup(() => observer.disconnect());
+					}}
+				>
 					<For each={[...INSPECTOR_TABS, REVIEW_TAB, MEMORY_TAB]}>
 						{(entry) => (
 							<button
@@ -69,7 +90,11 @@ export function Inspector(props: { chat: ChatControllerLike; onClose?: () => voi
 								role="tab"
 								class={`inspector-tab${activeTab(entry.id) ? " on" : ""}`}
 								aria-selected={activeTab(entry.id)}
-								onClick={() => openTab(entry.id)}
+								onClick={(event) => {
+									openTab(entry.id);
+									// A tab clipped by the edge has to come into view when it is chosen.
+									event.currentTarget.scrollIntoView({ inline: "nearest", block: "nearest" });
+								}}
 							>
 								{entry.label}
 							</button>

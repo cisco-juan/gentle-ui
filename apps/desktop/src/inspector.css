@@ -1,10 +1,12 @@
-/* Right inspector: a fixed-width column of workspace reads. Tone separates surfaces, never borders. */
+/*
+ * Right inspector: a column of workspace reads. Tone separates surfaces, never borders.
+ * It sets no width of its own: the grid track is the width (dragged, clamped, shrunk on a small
+ * window), and a fixed width here left the panel at 360px inside a wider track.
+ */
 
 .inspector {
 	display: flex;
 	flex-direction: column;
-	width: 360px;
-	max-width: 100%;
 	min-width: 0;
 	min-height: 0;
 	height: 100%;
@@ -31,6 +33,12 @@
 
 .inspector-tabs::-webkit-scrollbar {
 	display: none;
+}
+
+/* The strip scrolls without a scrollbar, so a fade says there is another tab past the edge. */
+.inspector-tabs.more {
+	-webkit-mask-image: linear-gradient(to right, #000 calc(100% - 22px), transparent);
+	mask-image: linear-gradient(to right, #000 calc(100% - 22px), transparent);
 }
 
 .inspector-tab {
