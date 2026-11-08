@@ -39,7 +39,7 @@ export default function App() {
 				{ id: "settings", label: "Settings", hint: format("Mod+,"), run: () => setSheet("settings") },
 				{ id: "shortcuts", label: "Keyboard shortcuts", hint: format("Mod+Shift+K"), run: () => setSheet("shortcuts") },
 				{ id: "rail", label: "Toggle the rail", hint: format("Mod+B"), run: () => setRailOpen((open) => !open) },
-				{ id: "inspector", label: "Toggle the inspector", hint: "changes, files, tasks", run: () => setInspectorOpen((open) => !open) },
+				{ id: "inspector", label: "Toggle the inspector", hint: format("Mod+Alt+B"), run: () => setInspectorOpen((open) => !open) },
 				{ id: "interrupt", label: "Interrupt the agent", hint: "Esc", run: () => void chat.interrupt() },
 			],
 		};
@@ -111,6 +111,9 @@ export default function App() {
 				case "rail":
 					setRailOpen((open) => !open);
 					break;
+				case "inspector":
+					setInspectorOpen((open) => !open);
+					break;
 				case "shortcuts":
 					setPalette(null);
 					setSheet("shortcuts");
@@ -180,7 +183,15 @@ export default function App() {
 					onRunCommand={(name) => void chat.runCommand(name)}
 					onPermissionMode={(mode) => void chat.setPermissionMode(mode)}
 				/>
-				<StatusBar model={chat.model} cost={chat.cost} running={chat.running} />
+				<StatusBar
+					model={chat.model}
+					cost={chat.cost}
+					running={chat.running}
+					railOpen={railOpen}
+					inspectorOpen={inspectorOpen}
+					onToggleRail={() => setRailOpen((open) => !open)}
+					onToggleInspector={() => setInspectorOpen((open) => !open)}
+				/>
 			</main>
 
 			<Show when={inspectorOpen()}>

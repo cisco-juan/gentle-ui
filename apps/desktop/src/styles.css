@@ -976,6 +976,24 @@ main {
 	color: var(--surface-3);
 }
 
+.panel-toggle {
+	display: grid;
+	place-items: center;
+	width: 20px;
+	height: 20px;
+	border-radius: 5px;
+	color: var(--muted);
+}
+
+.panel-toggle:hover {
+	background: var(--surface-2);
+	color: var(--text);
+}
+
+.panel-toggle.on {
+	color: var(--text-soft);
+}
+
 /* ---------- sheets ---------- */
 
 .sheet-backdrop {

@@ -173,6 +173,7 @@ export const BINDINGS = [
 	{ id: "palette", chord: "Mod+K", label: "Command palette" },
 	{ id: "quick-open", chord: "Mod+P", label: "Quick open" },
 	{ id: "rail", chord: "Mod+B", label: "Toggle the rail" },
+	{ id: "inspector", chord: "Mod+Alt+B", label: "Toggle the inspector" },
 	{ id: "shortcuts", chord: "Mod+Shift+K", label: "Keyboard shortcuts" },
 	{ id: "settings", chord: "Mod+,", label: "Settings" },
 	{ id: "send", chord: "Mod+Enter", label: "Send the message" },

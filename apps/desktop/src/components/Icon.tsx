@@ -8,6 +8,7 @@ import type { JSX } from "solid-js";
  */
 export type IconName =
 	| "panel"
+	| "panel-right"
 	| "plus"
 	| "search"
 	| "keyboard"
@@ -27,6 +28,12 @@ const PATHS: Record<IconName, JSX.Element> = {
 		<>
 			<rect x="2.5" y="3" width="11" height="10" rx="2" />
 			<path d="M6.5 3v10" />
+		</>
+	),
+	"panel-right": (
+		<>
+			<rect x="2.5" y="3" width="11" height="10" rx="2" />
+			<path d="M9.5 3v10" />
 		</>
 	),
 	plus: (

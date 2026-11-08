@@ -56,6 +56,7 @@ const SHORTCUTS: ReadonlyArray<{ keys: string; action: string; ready: boolean }>
 	{ keys: "Mod + K", action: "Command palette: actions, threads, commands, models", ready: true },
 	{ keys: "Mod + P", action: "Quick open a thread", ready: true },
 	{ keys: "Mod + B", action: "Toggle the rail", ready: true },
+	{ keys: "Mod + Alt + B", action: "Toggle the inspector", ready: true },
 	{ keys: "Mod + Shift + K", action: "This list", ready: true },
 	{ keys: "Mod + ,", action: "Settings", ready: true },
 ];

@@ -1,6 +1,21 @@
 import type { Accessor } from "solid-js";
+import { Icon } from "./Icon";
 
-export function StatusBar(props: { model: Accessor<string>; cost: Accessor<number>; running: Accessor<boolean> }) {
+/**
+ * Status line.
+ *
+ * It also hosts the panel toggles, because a panel you can close must be reachable again from
+ * somewhere always visible — a keyboard chord alone is not a discoverable way back.
+ */
+export function StatusBar(props: {
+	model: Accessor<string>;
+	cost: Accessor<number>;
+	running: Accessor<boolean>;
+	railOpen: Accessor<boolean>;
+	inspectorOpen: Accessor<boolean>;
+	onToggleRail: () => void;
+	onToggleInspector: () => void;
+}) {
 	return (
 		<div class="statusbar">
 			<span class="left">{props.running() ? "running" : "ready"}</span>
@@ -8,6 +23,23 @@ export function StatusBar(props: { model: Accessor<string>; cost: Accessor<numbe
 				<span class="muted">{props.model()}</span>
 				<span class="divider">·</span>
 				<span>${props.cost().toFixed(4)}</span>
+				<span class="divider">·</span>
+				<button
+					class="panel-toggle"
+					classList={{ on: props.railOpen() }}
+					title={`${props.railOpen() ? "Hide" : "Show"} the rail`}
+					onClick={() => props.onToggleRail()}
+				>
+					<Icon name="panel" size={13} />
+				</button>
+				<button
+					class="panel-toggle"
+					classList={{ on: props.inspectorOpen() }}
+					title={`${props.inspectorOpen() ? "Hide" : "Show"} the inspector`}
+					onClick={() => props.onToggleInspector()}
+				>
+					<Icon name="panel-right" size={13} />
+				</button>
 			</span>
 		</div>
 	);
