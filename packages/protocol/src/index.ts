@@ -568,6 +568,69 @@ export interface SettingsView {
 	readonly mcp: SettingsMcpSection;
 }
 
+/**
+ * A write that was refused, in a vocabulary a panel can render.
+ *
+ * `stale-plan` means the digest the confirmation carried no longer describes this request, or the plan
+ * was already used; `changed-on-disk` means the file moved under the plan. Neither is `unavailable`: the
+ * file is fine, the confirmation is not. Keep the two apart from `SettingsFailureReason`, which says why
+ * a file cannot be read at all.
+ */
+export type ConfigRefusalReason = "stale-plan" | "changed-on-disk";
+
+/** Why a write did not happen, readable or refused. */
+export type ConfigFailureReason = SettingsFailureReason | ConfigRefusalReason;
+
+/**
+ * The plan a write would perform, exactly as the confirmation shows it.
+ *
+ * `digest` is the sha256 of the canonical plan (operation, target, before, after). An apply must send it
+ * back unchanged: the bridge recomputes the plan, so this value is the confirmation, not a formality.
+ * The file's content is not sent — a settings file can hold anything — only what the plan names.
+ */
+export interface ConfigPlanView {
+	readonly operation: string;
+	readonly target: string;
+	readonly digest: string;
+	readonly summary: readonly string[];
+}
+
+/**
+ * The agent's `packages` list, as the settings sheet edits it.
+ *
+ * Writing is always two steps: `preview` returns a plan and its digest, and `apply` sends that digest
+ * back. The bridge installs nothing here: Pi resolves and installs a configured package when it starts,
+ * so a write to `settings.json` is the whole effect of an edit made from here.
+ */
+export type PackagesState = "ok" | "refused" | "unavailable";
+
+export type PackagesOperation = "install" | "remove";
+
+/** What a plan changes, rendered as the list before and after. */
+export interface PackagesChange {
+	readonly before: readonly SettingsPackage[];
+	readonly after: readonly SettingsPackage[];
+}
+
+export interface PackagesView {
+	readonly state: PackagesState;
+	readonly reason: ConfigFailureReason | null;
+	readonly message: string;
+	/** `<agentHome>/settings.json`, the file this family writes. */
+	readonly path: string;
+	/** False while the file does not exist yet; an apply creates it. */
+	readonly stored: boolean;
+	/** The `packages` list as it is on disk now. */
+	readonly packages: readonly SettingsPackage[];
+	readonly notes: readonly string[];
+	/** The confirmation: present for `preview` and `apply`, null for `list`, refused and unavailable. */
+	readonly plan: ConfigPlanView | null;
+	/** What that plan changes; null when there is no plan. */
+	readonly change: PackagesChange | null;
+	/** Where the bytes this apply replaced were kept; null when nothing was written. */
+	readonly backup: string | null;
+}
+
 export type ClientMessage =
 	| ({ readonly kind: "open"; readonly id: string } & OpenThreadRequest)
 	| { readonly kind: "close"; readonly threadId: string }
@@ -612,6 +675,24 @@ export type ClientMessage =
 	| { readonly kind: "permissions"; readonly id: string; readonly action: "default"; readonly mode: string }
 	/** The agent's own configuration: homes, packages, skills, MCP servers and the keys the sheet shows. */
 	| { readonly kind: "settings"; readonly id: string; readonly action: "read" }
+	/** The packages list: read it, plan a change to one source, or apply a plan the confirmation showed. */
+	| { readonly kind: "packages"; readonly id: string; readonly action: "list" }
+	| {
+			readonly kind: "packages";
+			readonly id: string;
+			readonly action: "preview";
+			readonly operation: PackagesOperation;
+			readonly source: string;
+	  }
+	/** A write only happens with the digest of the plan the preview returned. */
+	| {
+			readonly kind: "packages";
+			readonly id: string;
+			readonly action: "apply";
+			readonly operation: PackagesOperation;
+			readonly source: string;
+			readonly digest: string;
+	  }
 	/** Profiles. Every mutation answers with the whole list as it now is on disk. */
 	| { readonly kind: "profiles"; readonly id: string; readonly action: "list" }
 	| {
@@ -680,6 +761,10 @@ export type ServerMessage =
 			readonly kind: "settings";
 			readonly id: string;
 	  } & SettingsResult)
+	| ({
+			readonly kind: "packages";
+			readonly id: string;
+	  } & PackagesResult)
 	| { readonly kind: "error"; readonly id?: string; readonly message: string };
 
 /** One memory answer, tagged with the action that asked for it. */
@@ -693,6 +778,9 @@ export type PermissionsResult = { readonly action: "status" | "default"; readonl
 
 /** One settings answer. Reading is the only thing this family does, so there is one action. */
 export type SettingsResult = { readonly action: "read"; readonly data: SettingsView };
+
+/** One packages answer, tagged with the action that asked for it. */
+export type PackagesResult = { readonly action: "list" | "preview" | "apply"; readonly data: PackagesView };
 
 /** One profiles answer, tagged with the action that asked for it. */
 export type ProfilesResult =

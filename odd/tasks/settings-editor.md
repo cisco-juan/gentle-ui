@@ -31,8 +31,8 @@ Restricciones derivadas (no son frases del usuario; hacen cumplir S5 sobre el c�
 | ID | Task | Spec | Route | Commit |
 | --- | --- | --- | --- | --- |
 | T1 | bridge: familia `settings` de solo lectura (rutas, paquetes, skills descubiertos, MCP redactado, claves) | S1 | worker | pending |
-| T2 | bridge: protocolo preview/apply con digest para toda escritura de configuración | S5, C5 | worker | pending |
-| T3 | bridge: escritor de paquetes con la API de Pi (listar/instalar/quitar) sobre `settings.json` | S2, S5 | worker | pending |
+| T2 | bridge: base de escritura (preview/apply + digest, backup, escritura atómica) con el escritor de paquetes como primer consumidor | S2, S5, C3, C5 | worker | pending |
+| T3 | ~~bridge: escritor de paquetes~~ — fundido en T2: un protocolo de confirmación sin consumidor real es especulativo | S2 | — | dropped |
 | T4 | bridge: escritor de MCP (alta/baja/edición, stdio y http) con validación y redacción | S3, S5 | worker | pending |
 | T5 | bridge: escritor de claves acotadas de `settings.json` con valores tipados | S4, S5 | worker | pending |
 | T6 | desktop: chip de permisos cableado al cliente real, estado compartido con el sheet | S6 | worker | pending |

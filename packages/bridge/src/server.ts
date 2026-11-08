@@ -1,10 +1,20 @@
 import { createServer } from "node:http";
 import { randomBytes } from "node:crypto";
 import { WebSocketServer, type WebSocket } from "ws";
-import type { ClientMessage, PermissionsResult, PiCommand, ProfilesResult, ServerMessage, SessionSummary, SettingsResult } from "@gentle-shell/protocol";
+import type {
+	ClientMessage,
+	PackagesResult,
+	PermissionsResult,
+	PiCommand,
+	ProfilesResult,
+	ServerMessage,
+	SessionSummary,
+	SettingsResult,
+} from "@gentle-shell/protocol";
 import { resolveCommand } from "./commands.ts";
 import { gitDiff, gitStatus } from "./git.ts";
 import { memoryContext, memoryProjects, memorySearch, type MemoryOptions } from "./memory.ts";
+import { packagesApply, packagesList, packagesPreview, type PackagesOptions } from "./packages.ts";
 import { permissionsSetDefault, permissionsStatus, type PermissionsOptions } from "./permissions.ts";
 import {
 	profilesActivate,
@@ -54,6 +64,8 @@ export interface BridgeServerOptions {
 	readonly permissions?: PermissionsOptions;
 	/** The agent's own configuration files; a test points this at a scratch agent home. */
 	readonly settings?: SettingsOptions;
+	/** The agent's packages list, and where its backups go; a test points this at a scratch pair of homes. */
+	readonly packages?: PackagesOptions;
 }
 
 export interface BridgeServerHandle {
@@ -179,10 +191,22 @@ export async function startBridgeServer(options: BridgeServerOptions = {}): Prom
 		}
 
 		// The agent's own configuration belongs to the same home the bridge launches Pi with, not to a
-		// thread. This family only reads; every write of it is a later task and none is served here.
+		// thread. This family only reads; writing that home is the `packages` family below, and the
+		// writers that follow it.
 		if (message.kind === "settings") {
 			try {
 				await dispatchSettings(socket, message);
+			} catch (error) {
+				send(socket, { kind: "error", id: message.id, message: errorMessage(error) });
+			}
+			return;
+		}
+
+		// The packages list is the first family that writes. It writes to that same home, and only with
+		// the digest of the plan the confirmation showed: preview and apply are two separate requests.
+		if (message.kind === "packages") {
+			try {
+				await dispatchPackages(socket, message);
 			} catch (error) {
 				send(socket, { kind: "error", id: message.id, message: errorMessage(error) });
 			}
@@ -447,6 +471,38 @@ export async function startBridgeServer(options: BridgeServerOptions = {}): Prom
 				return reply({ action: "read", data: await settingsRead(workspace, settingsOptions) });
 			default:
 				throw new Error(`unsupported settings action: ${String((message as { action?: unknown }).action)}`);
+		}
+	}
+
+	/**
+	 * The packages list: one read, and a write in two requests.
+	 *
+	 * `preview` writes nothing and answers with the plan and the digest the confirmation shows; `apply`
+	 * repeats the operation and the source the user confirmed, plus that digest. What may be written is
+	 * decided in `packages.ts`, on this side of the wire, exactly as the permission default is.
+	 */
+	async function dispatchPackages(
+		socket: WebSocket,
+		message: Extract<ClientMessage, { kind: "packages" }>,
+	): Promise<void> {
+		const packagesOptions = options.packages ?? {};
+		const reply = (answer: PackagesResult): void => send(socket, { kind: "packages", id: message.id, ...answer });
+
+		switch (message.action) {
+			case "list":
+				return reply({ action: "list", data: await packagesList(workspace, packagesOptions) });
+			case "preview":
+				return reply({
+					action: "preview",
+					data: await packagesPreview(workspace, message.operation, message.source, packagesOptions),
+				});
+			case "apply":
+				return reply({
+					action: "apply",
+					data: await packagesApply(workspace, message.operation, message.source, message.digest, packagesOptions),
+				});
+			default:
+				throw new Error(`unsupported packages action: ${String((message as { action?: unknown }).action)}`);
 		}
 	}
 
