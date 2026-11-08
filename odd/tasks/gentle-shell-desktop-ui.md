@@ -87,3 +87,17 @@ not an app defect (elementFromPoint, computed colours and layout rects are all c
   in 37 ms on the largest project session.
 Known gap from this slice: the thread the app opens on connect is a fresh session, so no rail row is
 active until the first prompt creates its file.
+
+L5. Ten UI defects reported from real use, with screenshots: (1) the `/` list hides the `gentle:*` commands,
+(2) the rail scrolls its own header away, (3) rail rows look bare next to the reference, (4) the footer
+moves with the scroll and hides, (5) the composer chips look clickable but are not, (6) the rail needs to
+match the rest of the shell, (7) settings should live at the bottom of the rail, (8) card borders and
+accent bars read as generated filler, (9) scrolling the chat scrolls the page and drags the input, and
+(10) answers arrive as raw markdown.
+
+Resolved in 0925460: (2)(4)(6)(7)(8)(9) layout and visual pass, (5) chips drive set_model and the agent's
+own commands, (10) markdown rendered from JSX nodes. Verified through the DOM: the document does not
+scroll, the chat scrolls without moving the composer, the rail scrolls without moving its footer, the
+model popover lists 50 models, and `**bold**`/`` `code` ``/fenced code all render as elements.
+(1) and (3) remain: the `gentle:*` commands are absent from `get_commands` under RPC (explorer
+investigating), and the rail rows get their second design pass once those commands surface.
