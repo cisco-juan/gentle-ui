@@ -1,0 +1,18 @@
+export interface ScrollMetrics {
+	readonly scrollTop: number;
+	readonly clientHeight: number;
+	readonly scrollHeight: number;
+}
+
+/** Pixels from the end that still count as "at the bottom", so a rounding gap does not unstick a reader. */
+const NEAR_BOTTOM_PX = 80;
+
+/**
+ * Whether the reader is following the end of a transcript.
+ *
+ * A stream that jumps to the bottom on every delta takes the page away from someone who scrolled up
+ * to read; following only while they are already at the end leaves them where they chose to be.
+ */
+export function isNearBottom(metrics: ScrollMetrics): boolean {
+	return metrics.scrollHeight - metrics.scrollTop - metrics.clientHeight <= NEAR_BOTTOM_PX;
+}

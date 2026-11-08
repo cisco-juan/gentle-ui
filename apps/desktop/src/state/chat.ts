@@ -2,7 +2,7 @@ import { batch, createSignal, type Accessor } from "solid-js";
 import type { ExtensionUiRequest, ExtensionUiResponse, ServerMessage, SessionSummary, UploadedFile } from "@gentle-shell/protocol";
 import { BridgeClient } from "../lib/bridge";
 import { checkCommand, unknownCommandNotice } from "../lib/commands";
-import { extensionErrorText, startsRun } from "../lib/prompt-outcome";
+import { extensionErrorText, promptParams, startsRun, wasCancelled } from "../lib/prompt-outcome";
 import {
 	IMAGE_ONLY_PROMPT,
 	buildImages,
@@ -335,7 +335,8 @@ export function createChatController(options: { url: string; cwd: string }): Cha
 			const remembered = readLastThread();
 			const current = (opened.state as { sessionFile?: string } | null)?.sessionFile ?? null;
 			if (remembered !== null && remembered !== current) {
-				await switchThread(remembered).catch(() => forgetLastThread());
+				// A thread that is gone is forgotten quietly: an error on every launch helps nobody.
+				if (!(await openThread(remembered, { quiet: true }))) forgetLastThread();
 			}
 		} catch (error) {
 			setConnection("failed");
@@ -387,9 +388,15 @@ export function createChatController(options: { url: string; cwd: string }): Cha
 
 		if (!client || !threadId) {
 			restoreAttachments(staged);
-			if (attached.length > 0) {
-				append({ kind: "notice", id: nextId(), text: "the agent is not connected; the attachment was kept", tone: "error" });
-			}
+			append({
+				kind: "notice",
+				id: nextId(),
+				text:
+					attached.length > 0
+						? "the agent is not connected; the attachment was kept"
+						: "the agent is not connected; nothing was sent",
+				tone: "error",
+			});
 			return;
 		}
 
@@ -426,14 +433,16 @@ export function createChatController(options: { url: string; cwd: string }): Cha
 				return;
 			}
 		}
+		// A prompt sent mid-run is queued behind it, so it must not end or restart the run in flight.
+		const queued = running();
 		append({ kind: "user", id: nextId(), text: message });
 		setRunning(true);
 		try {
-			const answer = await client.command(threadId, "prompt", images.length > 0 ? { message, images } : { message });
+			const answer = await client.command(threadId, "prompt", promptParams(message, images, queued));
 			// An extension command finishes inside this call and never emits agent_settled.
-			if (!startsRun(answer)) setRunning(false);
+			if (!queued && !startsRun(answer)) setRunning(false);
 		} catch (error) {
-			setRunning(false);
+			if (!queued) setRunning(false);
 			append({ kind: "notice", id: nextId(), text: errorText(error), tone: "error" });
 		}
 	}
@@ -512,52 +521,70 @@ export function createChatController(options: { url: string; cwd: string }): Cha
 
 	async function newThread(): Promise<void> {
 		if (!client || !threadId) return;
+		const active = client;
+		const id = threadId;
+		// Pi would abort the run on its own; stopping it first keeps its last events out of the new thread.
+		if (running()) await interrupt();
 		flushDraft();
+		let answer: unknown;
+		try {
+			answer = await active.command(id, "new_session");
+		} catch (error) {
+			// The transcript stays: a thread that failed to start must not erase the one on screen.
+			append({ kind: "notice", id: nextId(), text: errorText(error), tone: "error" });
+			return;
+		}
+		if (wasCancelled(answer)) {
+			append({ kind: "notice", id: nextId(), text: "a new thread was not started: an extension cancelled it", tone: "warning" });
+			return;
+		}
+
+		const state = await active.command<unknown>(id, "get_state").catch(() => null);
+		const path = sessionFileOf(state);
 		batch(() => {
 			setItems([]);
 			setDraft("");
 			setCost(0);
-			setActivePath(null);
+			setRunning(false);
+			setHint("");
+			setActivePath(path);
 		});
-		try {
-			await client.command(threadId, "new_session");
-		} catch (error) {
-			append({
-				kind: "notice",
-				id: nextId(),
-				text: error instanceof Error ? error.message : String(error),
-				tone: "error",
-			});
-		}
+		if (path !== null) writeLastThread(path);
 		await refreshThreads();
 	}
 
 	/** Switch the open Pi thread to a session file and redraw the transcript from its history. */
 	async function switchThread(path: string): Promise<void> {
-		if (!client || !threadId || path === activePath()) return;
+		await openThread(path, { quiet: false });
+	}
+
+	/** Open a session file. Resolves false when it could not be opened; `quiet` keeps that out of the transcript. */
+	async function openThread(path: string, options: { quiet: boolean }): Promise<boolean> {
+		if (!client || !threadId) return false;
+		if (path === activePath()) return true;
 		const active = client;
 		const id = threadId;
+		if (running()) await interrupt();
 		try {
-			await active.command(id, "switch_session", { sessionPath: path });
+			const answer = await active.command(id, "switch_session", { sessionPath: path });
+			if (wasCancelled(answer)) throw new Error("an extension cancelled switching threads");
 			batch(() => {
 				setItems([]);
 				setDraft("");
 				setCost(0);
+				setRunning(false);
+				setHint("");
 				setActivePath(path);
 			});
 			await loadHistory(active, id);
 			await refreshState(active, id);
 			writeLastThread(path);
 		} catch (error) {
-			append({
-				kind: "notice",
-				id: nextId(),
-				text: error instanceof Error ? error.message : String(error),
-				tone: "error",
-			});
-			return;
+			if (!options.quiet) append({ kind: "notice", id: nextId(), text: errorText(error), tone: "error" });
+			return false;
 		}
 		await refreshThreads();
+		return true;
 	}
 
 	/** Re-read the live state so the model chip describes the thread that is now open. */

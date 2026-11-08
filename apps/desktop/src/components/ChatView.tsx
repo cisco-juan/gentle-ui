@@ -1,6 +1,7 @@
 import { For, Match, Show, Switch, createEffect, type Accessor } from "solid-js";
 import type { ExtensionUiResponse } from "@gentle-shell/protocol";
 import { formatChord, isMac } from "../lib/keybindings";
+import { isNearBottom } from "../lib/scroll";
 import type { ChatItem } from "../state/chat";
 import { RichText } from "./RichText";
 import { PermissionCard } from "./PermissionCard";
@@ -21,15 +22,25 @@ export function ChatView(props: {
 	onAnswer: (requestId: string, response: ExtensionUiResponse) => void;
 }) {
 	let scroller: HTMLDivElement | undefined;
+	// Follow the stream only while the reader is at its end; scrolling up to read must stick.
+	let following = true;
 
 	createEffect(() => {
-		props.items().length;
+		const items = props.items();
 		props.draft();
-		if (scroller) scroller.scrollTop = scroller.scrollHeight;
+		// Sending a message is a request to see the answer, wherever the reader had scrolled to.
+		if (items[items.length - 1]?.kind === "user") following = true;
+		if (following && scroller) scroller.scrollTop = scroller.scrollHeight;
 	});
 
 	return (
-		<div class="chat" ref={scroller}>
+		<div
+			class="chat"
+			ref={scroller}
+			onScroll={() => {
+				if (scroller) following = isNearBottom(scroller);
+			}}
+		>
 			<Show when={props.items().length === 0 && props.draft().length === 0}>
 				<div class="empty">
 					<h1>gentle shell</h1>

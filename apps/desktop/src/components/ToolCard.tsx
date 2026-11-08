@@ -3,10 +3,27 @@ import type { ChatItem } from "../state/chat";
 
 type ToolItem = Extract<ChatItem, { kind: "tool" }>;
 
+/**
+ * What the reader opened, by item id. The transcript replaces a tool's item on every update, which
+ * rebuilds the card, so state held only inside it collapsed the card under the reader's eyes.
+ */
+const cardState = new Map<string, { open: boolean; args: boolean }>();
+
 /** One tool call: a collapsed summary line that expands into its arguments and output. */
 export function ToolCard(props: { tool: ToolItem }) {
-	const [open, setOpen] = createSignal(false);
-	const [showArgs, setShowArgs] = createSignal(false);
+	const id = props.tool.id;
+	const [open, setOpenState] = createSignal(cardState.get(id)?.open ?? false);
+	const [showArgs, setShowArgsState] = createSignal(cardState.get(id)?.args ?? false);
+	const setOpen = (next: (current: boolean) => boolean): void => {
+		const value = next(open());
+		setOpenState(value);
+		cardState.set(id, { open: value, args: showArgs() });
+	};
+	const setShowArgs = (next: (current: boolean) => boolean): void => {
+		const value = next(showArgs());
+		setShowArgsState(value);
+		cardState.set(id, { open: open(), args: value });
+	};
 	const preview = () => props.tool.output.split("\n").slice(0, 3).join("\n");
 	const summary = (): string => {
 		const args = props.tool.args as Record<string, unknown> | null;

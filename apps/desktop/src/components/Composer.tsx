@@ -83,6 +83,12 @@ export function Composer(props: {
 		const pending = attachments();
 		if (uploading()) return;
 		if (message.length === 0 && pending.length === 0) return;
+		const controller = chat();
+		if (controller !== null && controller.connection() !== "connected") {
+			// Clearing the field first would throw away what was typed for a message that cannot be sent.
+			controller.notify("the agent is not connected; your message was kept", "error");
+			return;
+		}
 		setText("");
 		props.onSend(message, pending);
 	}

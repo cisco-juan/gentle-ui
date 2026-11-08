@@ -1,3 +1,5 @@
+import type { PromptImage } from "./attachments";
+
 /**
  * Whether the answer to a `prompt` means an agent run is now in flight.
  *
@@ -16,4 +18,27 @@ export function extensionErrorText(record: Readonly<Record<string, unknown>>): s
 	const event = typeof record.event === "string" ? record.event : "";
 	const command = event.startsWith("command:") ? event.slice("command:".length) : "";
 	return command.length > 0 ? `${command} failed: ${cause}` : `an extension failed: ${cause}`;
+}
+
+/**
+ * The parameters of a `prompt`, queued behind the run when one is in flight.
+ *
+ * Pi refuses a prompt that arrives mid-run unless it says how to queue it ("Agent is already
+ * processing. Specify streamingBehavior"), and a refusal here used to look like the run had ended.
+ */
+export function promptParams(
+	message: string,
+	images: readonly PromptImage[],
+	running: boolean,
+): Record<string, unknown> {
+	return {
+		message,
+		...(images.length > 0 ? { images } : {}),
+		...(running ? { streamingBehavior: "followUp" } : {}),
+	};
+}
+
+/** True when an extension vetoed a session change (`new_session`, `switch_session`). */
+export function wasCancelled(answer: unknown): boolean {
+	return typeof answer === "object" && answer !== null && (answer as { cancelled?: unknown }).cancelled === true;
 }
