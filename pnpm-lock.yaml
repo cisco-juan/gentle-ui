@@ -168,6 +168,9 @@ importers:
 
   apps/desktop:
     dependencies:
+      '@gentle-shell/protocol':
+        specifier: workspace:*
+        version: link:../../packages/protocol
       '@tauri-apps/api':
         specifier: ^2
         version: 2.12.4

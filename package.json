@@ -8,10 +8,11 @@
     "node": ">=22"
   },
   "scripts": {
-    "dev": "pnpm --filter @gentle-shell/desktop dev",
+    "dev": "node scripts/dev.mjs",
+    "dev:web": "pnpm --filter @gentle-shell/desktop dev",
+    "dev:bridge": "node --experimental-strip-types packages/bridge/src/main.ts --port 7787 --token dev",
     "dev:desktop": "pnpm --filter @gentle-shell/desktop tauri dev",
-    "dev:bridge": "pnpm --filter @gentle-shell/bridge dev",
-    "build:bridge": "pnpm --filter @gentle-shell/bridge build",
+    "test": "pnpm --filter @gentle-shell/bridge test",
     "typecheck": "pnpm -r typecheck"
   }
 }

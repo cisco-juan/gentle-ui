@@ -1,0 +1,303 @@
+import { batch, createSignal, type Accessor } from "solid-js";
+import type { ExtensionUiRequest, ExtensionUiResponse, ServerMessage } from "@gentle-shell/protocol";
+import { BridgeClient } from "../lib/bridge";
+import { textOf, type AssistantMessage, type AssistantStreamEvent, type PiEnvelope, type ToolResultPayload } from "../lib/records";
+
+export type ChatItem =
+	| { kind: "user"; id: string; text: string }
+	| { kind: "assistant"; id: string; text: string; model?: string; cost?: number }
+	| {
+			kind: "tool";
+			id: string;
+			callId: string;
+			name: string;
+			args: unknown;
+			output: string;
+			status: "running" | "done" | "error";
+			durationMs?: number;
+	  }
+	| { kind: "permission"; id: string; request: ExtensionUiRequest; answer: string | null }
+	| { kind: "notice"; id: string; text: string; tone: "info" | "warning" | "error" };
+
+export interface ChatController {
+	readonly items: Accessor<ChatItem[]>;
+	readonly draft: Accessor<string>;
+	readonly running: Accessor<boolean>;
+	readonly connection: Accessor<"connecting" | "connected" | "failed">;
+	readonly model: Accessor<string>;
+	readonly cost: Accessor<number>;
+	readonly statuses: Accessor<Record<string, string>>;
+	readonly commands: Accessor<Array<{ name: string; description: string }>>;
+	connect(): Promise<void>;
+	send(text: string): Promise<void>;
+	interrupt(): Promise<void>;
+	newThread(): Promise<void>;
+	answerPermission(requestId: string, response: ExtensionUiResponse): void;
+}
+
+/** Translate Pi's record stream into renderable chat items. */
+export function createChatController(options: { url: string; cwd: string }): ChatController {
+	const [items, setItems] = createSignal<ChatItem[]>([]);
+	const [draft, setDraft] = createSignal("");
+	const [running, setRunning] = createSignal(false);
+	const [connection, setConnection] = createSignal<"connecting" | "connected" | "failed">("connecting");
+	const [model, setModel] = createSignal("");
+	const [cost, setCost] = createSignal(0);
+	const [statuses, setStatuses] = createSignal<Record<string, string>>({});
+	const [commands, setCommands] = createSignal<Array<{ name: string; description: string }>>([]);
+
+	let client: BridgeClient | null = null;
+	let threadId: string | null = null;
+	let counter = 0;
+
+	const nextId = (): string => `item-${++counter}`;
+
+	function append(item: ChatItem): void {
+		setItems((current) => [...current, item]);
+	}
+
+	function patch(callId: string, change: Partial<Extract<ChatItem, { kind: "tool" }>>): void {
+		setItems((current) =>
+			current.map((item) => (item.kind === "tool" && item.callId === callId ? { ...item, ...change } : item)),
+		);
+	}
+
+	/** Commit streaming text before anything else lands below it. */
+	function flushDraft(): void {
+		const text = draft().trim();
+		if (text.length === 0) {
+			setDraft("");
+			return;
+		}
+		append({ kind: "assistant", id: nextId(), text });
+		setDraft("");
+	}
+
+	function handle(message: ServerMessage): void {
+		if (message.kind === "log") return;
+		if (message.kind === "exited") {
+			setRunning(false);
+			append({ kind: "notice", id: nextId(), text: "The agent process exited. Reconnect to continue.", tone: "error" });
+			return;
+		}
+		if (message.kind === "error") {
+			append({ kind: "notice", id: nextId(), text: message.message, tone: "error" });
+			return;
+		}
+		if (message.kind === "ui-request") {
+			flushDraft();
+			append({ kind: "permission", id: nextId(), request: message.request, answer: null });
+			return;
+		}
+		if (message.kind !== "record") return;
+
+		const record = message.record as PiEnvelope;
+		const type = record.type;
+
+		if (type === "extension_ui_request") {
+			handleFireAndForget(record);
+			return;
+		}
+		if (type === "agent_start") {
+			setRunning(true);
+			return;
+		}
+		if (type === "agent_settled") {
+			batch(() => {
+				flushDraft();
+				setRunning(false);
+			});
+			return;
+		}
+		if (type === "message_start") {
+			const message_ = record.message as AssistantMessage | undefined;
+			if (message_?.role === "assistant") setDraft("");
+			return;
+		}
+		if (type === "message_update") {
+			const update = record.assistantMessageEvent as AssistantStreamEvent | undefined;
+			if (update?.type === "text_delta" && typeof update.delta === "string") {
+				setDraft((current) => current + update.delta);
+			}
+			return;
+		}
+		if (type === "message_end") {
+			const ended = record.message as AssistantMessage | undefined;
+			if (ended?.role !== "assistant") return;
+			const text = textOf(ended.content);
+			const spent = ended.usage?.cost?.total;
+			if (typeof spent === "number") setCost((current) => current + spent);
+			if (ended.model) setModel(ended.model);
+			batch(() => {
+				if (text.trim().length > 0) {
+					append({
+						kind: "assistant",
+						id: nextId(),
+						text,
+						...(ended.model === undefined ? {} : { model: ended.model }),
+						...(spent === undefined ? {} : { cost: spent }),
+					});
+				}
+				setDraft("");
+			});
+			return;
+		}
+		if (type === "tool_execution_start") {
+			flushDraft();
+			const callId = String(record.toolCallId ?? nextId());
+			append({
+				kind: "tool",
+				id: nextId(),
+				callId,
+				name: String(record.toolName ?? "tool"),
+				args: record.args ?? {},
+				output: "",
+				status: "running",
+			});
+			return;
+		}
+		if (type === "tool_execution_update") {
+			const partial = record.partialResult as ToolResultPayload | undefined;
+			patch(String(record.toolCallId ?? ""), { output: textOf(partial?.content) });
+			return;
+		}
+		if (type === "tool_execution_end") {
+			const result = record.result as ToolResultPayload | undefined;
+			const structured = result?.structuredContent;
+			const output = textOf(result?.content) || (structured ? JSON.stringify(structured, null, 2) : "");
+			patch(String(record.toolCallId ?? ""), {
+				output,
+				status: record.isError === true ? "error" : "done",
+				...(typeof record.durationMs === "number" ? { durationMs: record.durationMs } : {}),
+			});
+		}
+	}
+
+	function handleFireAndForget(record: PiEnvelope): void {
+		const method = record.method;
+		if (method === "setStatus") {
+			const key = String(record.statusKey ?? "status");
+			const text = String(record.statusText ?? "");
+			setStatuses((current) => {
+				const next = { ...current };
+				if (text.length === 0) delete next[key];
+				else next[key] = text;
+				return next;
+			});
+			return;
+		}
+		if (method === "notify") {
+			const tone = record.notifyType === "error" ? "error" : record.notifyType === "warning" ? "warning" : "info";
+			append({ kind: "notice", id: nextId(), text: String(record.message ?? ""), tone });
+		}
+	}
+
+	async function connect(): Promise<void> {
+		setConnection("connecting");
+		const next = new BridgeClient(options.url);
+		try {
+			await next.connect();
+			next.subscribe(handle);
+			const opened = await next.open(options.cwd);
+			threadId = opened.threadId;
+			client = next;
+			setConnection("connected");
+			await bootstrap(next, opened.state);
+		} catch (error) {
+			setConnection("failed");
+			append({
+				kind: "notice",
+				id: nextId(),
+				text: error instanceof Error ? error.message : String(error),
+				tone: "error",
+			});
+		}
+	}
+
+	async function bootstrap(active: BridgeClient, state: unknown): Promise<void> {
+		const view = state as { model?: { id?: string } } | null;
+		if (view?.model?.id) setModel(view.model.id);
+		try {
+			const listed = await active.command<{ commands: Array<{ name: string; description: string }> }>(
+				threadId as string,
+				"get_commands",
+			);
+			setCommands(listed.commands ?? []);
+		} catch {
+			// A missing command list is not fatal: the composer still sends plain prompts.
+		}
+	}
+
+	async function send(text: string): Promise<void> {
+		const message = text.trim();
+		if (message.length === 0 || !client || !threadId) return;
+		append({ kind: "user", id: nextId(), text: message });
+		setRunning(true);
+		try {
+			await client.command(threadId, "prompt", { message });
+		} catch (error) {
+			setRunning(false);
+			append({
+				kind: "notice",
+				id: nextId(),
+				text: error instanceof Error ? error.message : String(error),
+				tone: "error",
+			});
+		}
+	}
+
+	async function interrupt(): Promise<void> {
+		if (!client || !threadId) return;
+		try {
+			await client.command(threadId, "abort");
+			await client.command(threadId, "clear_queue");
+		} catch {
+			// Already idle: nothing to interrupt.
+		}
+	}
+
+	async function newThread(): Promise<void> {
+		if (!client || !threadId) return;
+		flushDraft();
+		setItems([]);
+		setCost(0);
+		try {
+			await client.command(threadId, "new_session");
+		} catch (error) {
+			append({
+				kind: "notice",
+				id: nextId(),
+				text: error instanceof Error ? error.message : String(error),
+				tone: "error",
+			});
+		}
+	}
+
+	function answerPermission(requestId: string, response: ExtensionUiResponse): void {
+		if (!client || !threadId) return;
+		client.answer(threadId, requestId, response);
+		setItems((current) =>
+			current.map((item) =>
+				item.kind === "permission" && item.request.id === requestId
+					? { ...item, answer: response.cancelled ? "cancelled" : String(response.value ?? response.confirmed ?? "") }
+					: item,
+			),
+		);
+	}
+
+	return {
+		items,
+		draft,
+		running,
+		connection,
+		model,
+		cost,
+		statuses,
+		commands,
+		connect,
+		send,
+		interrupt,
+		newThread,
+		answerPermission,
+	};
+}

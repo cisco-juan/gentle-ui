@@ -21,9 +21,9 @@ export class ThreadHost {
 	state: unknown = null;
 
 	constructor(request: OpenThreadRequest, options: ThreadHostOptions = {}) {
-		this.cwd = request.cwd;
+		this.cwd = request.cwd ?? process.cwd();
 		this.pi = new PiProcess({
-			cwd: request.cwd,
+			cwd: this.cwd,
 			...(options.executable === undefined ? {} : { executable: options.executable }),
 			...(options.env === undefined ? {} : { env: options.env }),
 		});

@@ -5,7 +5,7 @@ pinned npm dependencies (`@earendil-works/pi-coding-agent`, `gentle-pi`), never 
 releases flow in as version bumps. The UI is a Tauri v2 shell (system webview) around a Vite frontend,
 with a Node bridge that drives the `pi` agent process.
 
-Status: T1 and T2 done. Bridge speaks to `pi --mode rpc` over a tokenised loopback WebSocket and
+Status: T1, T2 and T4 done. Bridge speaks to `pi --mode rpc` over a tokenised loopback WebSocket and
 re-answers extension dialogs; 7 tests green against the real binary. See `docs/architecture.md`.
 
 ## Specs
@@ -44,7 +44,10 @@ not the branding, as the reference.
 T1  [x] Workspace scaffold: git init, pnpm workspace, `apps/desktop` (Tauri v2 + Solid + Vite), `packages/bridge`. S6 — 64eb88d
 T2  [x] Bridge: spawn `pi --mode rpc`, JSONL framing, command allowlist, event fan-out, extension dialogs. S1 — 3f87bac
 T3  Session and project model: list, create, switch, search threads; sidebar navigation. S1 S3 S7
-T4  Chat view: streaming messages, collapsible tool cards, inline permission approvals, composer. S1 S3
+T4  [x] Chat view: streaming messages, collapsible tool cards, inline permission approvals, composer. S1 S3 — fa339ef
+    Verified end to end: a prompt typed in the UI ran bash, rendered the tool card with its result,
+    streamed the assistant reply, and committed it with model and cost. Screenshot capture in the
+    headless browser returns blank frames (environment), so the proof is the DOM transcript.
 T5  Composer chips: profile, model, effort, permission mode, attachments (no modals). S3
 T6  Right inspector tabs: Changes, Files, Tasks, Memory, Agents/jobs. S3 S7
 T7  Command palette plus a Mod-based keybinding layer and cheat sheet. S4

@@ -19,6 +19,8 @@ export type DialogMethod = "select" | "confirm" | "input" | "editor";
 export type NotificationMethod = "notify" | "setStatus" | "setWidget" | "setTitle" | "set_editor_text";
 
 export interface ExtensionUiRequest extends PiRecord {
+	/** Request id the answer must repeat. */
+	readonly id: string;
 	readonly method: DialogMethod | NotificationMethod;
 	readonly title?: string;
 	readonly message?: string;
@@ -35,7 +37,8 @@ export interface ExtensionUiResponse {
 }
 
 export interface OpenThreadRequest {
-	readonly cwd: string;
+	/** Workspace folder. Absent means the bridge's own working directory. */
+	readonly cwd?: string;
 	/** Session file to resume. Absent opens a fresh session. */
 	readonly sessionPath?: string;
 	readonly provider?: string;
