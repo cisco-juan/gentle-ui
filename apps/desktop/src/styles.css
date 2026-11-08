@@ -740,6 +740,12 @@ main {
 	font-size: 12px;
 }
 
+.text-input.editor {
+	flex-basis: 100%;
+	resize: vertical;
+	line-height: 1.5;
+}
+
 .permission-answer {
 	margin: 0;
 	font-family: var(--mono);

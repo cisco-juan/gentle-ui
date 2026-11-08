@@ -2,6 +2,7 @@ import { batch, createSignal, type Accessor } from "solid-js";
 import type { ExtensionUiRequest, ExtensionUiResponse, ServerMessage, SessionSummary, UploadedFile } from "@gentle-shell/protocol";
 import { BridgeClient } from "../lib/bridge";
 import { checkCommand, unknownCommandNotice } from "../lib/commands";
+import { answerLabel } from "../lib/permission";
 import { extensionErrorText, promptParams, startsRun, wasCancelled } from "../lib/prompt-outcome";
 import {
 	IMAGE_ONLY_PROMPT,
@@ -706,7 +707,7 @@ export function createChatController(options: { url: string; cwd: string }): Cha
 		setItems((current) =>
 			current.map((item) =>
 				item.kind === "permission" && item.request.id === requestId
-					? { ...item, answer: response.cancelled ? "cancelled" : String(response.value ?? response.confirmed ?? "") }
+					? { ...item, answer: answerLabel(response) }
 					: item,
 			),
 		);

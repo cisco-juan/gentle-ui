@@ -80,14 +80,18 @@ export function groupByType(observations: readonly MemoryObservation[]): readonl
 export function createMemoryPanel(options: { readonly connect: () => BridgeClient | null }): MemoryPanel {
 	const [view, setView] = createSignal<MemoryView>(EMPTY_VIEW);
 
-	// One generation covers both reads: a slow answer cannot overwrite a newer one, and a refresh
-	// cancels a search that is still open instead of rendering a result nobody asked for anymore.
-	let run = 0;
+	// One generation per kind of read: a slow answer cannot overwrite a newer one of its own kind.
+	// They are separate because a read that is overtaken returns without touching the view, so when a
+	// refresh and a search shared one counter the overtaken one never cleared its own busy flag and
+	// its button stayed on "reading…" or "asking…" for good. A refresh reads the project, a search
+	// reads results for it: neither makes the other's answer wrong.
+	let refreshRun = 0;
+	let searchRun = 0;
 	let stopped = false;
 
 	async function refresh(): Promise<void> {
 		const client = options.connect();
-		const current = ++run;
+		const current = ++refreshRun;
 		if (client === null) {
 			setView((value) => ({ ...value, loading: false, error: "the bridge is not connected" }));
 			return;
@@ -102,11 +106,11 @@ export function createMemoryPanel(options: { readonly connect: () => BridgeClien
 				client.memory({ action: "projects" }),
 			]);
 		} catch (error) {
-			if (current !== run || stopped) return;
+			if (current !== refreshRun || stopped) return;
 			setView((value) => ({ ...value, context: null, projects: null, loading: false, error: messageOf(error) }));
 			return;
 		}
-		if (current !== run || stopped) return;
+		if (current !== refreshRun || stopped) return;
 		setView((value) => ({ ...value, context, projects, loading: false, error: null }));
 	}
 
@@ -123,14 +127,14 @@ export function createMemoryPanel(options: { readonly connect: () => BridgeClien
 			return;
 		}
 
-		const current = ++run;
+		const current = ++searchRun;
 		setView((value) => ({ ...value, searching: true, error: null }));
 		try {
 			const results = await client.memory({ action: "search", query: asked });
-			if (current !== run || stopped) return;
+			if (current !== searchRun || stopped) return;
 			setView((value) => ({ ...value, results, searching: false, selectedId: null }));
 		} catch (error) {
-			if (current !== run || stopped) return;
+			if (current !== searchRun || stopped) return;
 			setView((value) => ({ ...value, results: null, searching: false, error: messageOf(error) }));
 		}
 	}
@@ -142,7 +146,8 @@ export function createMemoryPanel(options: { readonly connect: () => BridgeClien
 
 	function stop(): void {
 		stopped = true;
-		run += 1;
+		refreshRun += 1;
+		searchRun += 1;
 	}
 
 	return { view, refresh, search, select, stop };

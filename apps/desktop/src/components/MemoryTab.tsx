@@ -69,6 +69,10 @@ export function MemoryTab(props: { memory: MemoryPanel }): JSX.Element {
 			<div class="memory-scroll">
 				<Show when={view().error}>{(error) => <p class="inspector-error">{error()}</p>}</Show>
 
+				<Show when={view().loading && context() === null}>
+					<p class="inspector-empty">Reading this project's memory…</p>
+				</Show>
+
 				{/* The project Engram derived, and what it says it remembers, or exactly why it cannot say. */}
 				<Show when={context()}>
 					{(current) => (
