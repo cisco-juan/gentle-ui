@@ -5,7 +5,8 @@ pinned npm dependencies (`@earendil-works/pi-coding-agent`, `gentle-pi`), never 
 releases flow in as version bumps. The UI is a Tauri v2 shell (system webview) around a Vite frontend,
 with a Node bridge that drives the `pi` agent process.
 
-Status: planning. Architecture decided (desktop shell + dependency consumption), RPC surface being mapped.
+Status: T1 and T2 done. Bridge speaks to `pi --mode rpc` over a tokenised loopback WebSocket and
+re-answers extension dialogs; 7 tests green against the real binary. See `docs/architecture.md`.
 
 ## Specs
 
@@ -40,8 +41,8 @@ not the branding, as the reference.
 
 ## Tasks
 
-T1  Workspace scaffold: git init, pnpm workspace, `apps/desktop` (Tauri v2 + Vite), `packages/bridge` (Node). S6
-T2  Bridge: spawn `pi` in RPC/headless mode, stream events, send prompts, cancel, switch model/profile. S1
+T1  [x] Workspace scaffold: git init, pnpm workspace, `apps/desktop` (Tauri v2 + Solid + Vite), `packages/bridge`. S6 — 64eb88d
+T2  [x] Bridge: spawn `pi --mode rpc`, JSONL framing, command allowlist, event fan-out, extension dialogs. S1 — 3f87bac
 T3  Session and project model: list, create, switch, search threads; sidebar navigation. S1 S3 S7
 T4  Chat view: streaming messages, collapsible tool cards, inline permission approvals, composer. S1 S3
 T5  Composer chips: profile, model, effort, permission mode, attachments (no modals). S3
