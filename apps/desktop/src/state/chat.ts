@@ -1,7 +1,7 @@
 import { batch, createSignal, type Accessor } from "solid-js";
 import type { ExtensionUiRequest, ExtensionUiResponse, ServerMessage, SessionSummary, UploadedFile } from "@gentle-shell/protocol";
 import { BridgeClient } from "../lib/bridge";
-import { checkCommand } from "../lib/commands";
+import { checkCommand, unknownCommandNotice } from "../lib/commands";
 import { extensionErrorText, startsRun } from "../lib/prompt-outcome";
 import {
 	IMAGE_ONLY_PROMPT,
@@ -128,7 +128,8 @@ export function createChatController(options: { url: string; cwd: string }): Cha
 	const [commands, setCommands] = createSignal<Array<{ name: string; description: string }>>([]);
 	const [models, setModels] = createSignal<Array<{ provider: string; id: string; contextWindow?: number }>>([]);
 	const [profile] = createSignal("default");
-	const [permissionMode, setPermissionModeSignal] = createSignal("normal");
+	// The agent publishes no permission mode over RPC and refuses to change it here, so there is nothing to track.
+	const permissionMode = (): string => "normal";
 	const [hint, setHint] = createSignal("");
 	let hintTimer: ReturnType<typeof setTimeout> | undefined;
 	const [threads, setThreads] = createSignal<readonly SessionSummary[]>([]);
@@ -416,6 +417,14 @@ export function createChatController(options: { url: string; cwd: string }): Cha
 				});
 				return;
 			}
+			const mistyped = unknownCommandNotice(
+				firstLine,
+				commands().map((entry) => entry.name),
+			);
+			if (mistyped !== null) {
+				append({ kind: "notice", id: nextId(), text: mistyped, tone: "warning" });
+				return;
+			}
 		}
 		append({ kind: "user", id: nextId(), text: message });
 		setRunning(true);
@@ -655,9 +664,14 @@ function errorText(error: unknown): string {
 	}
 
 	async function setPermissionMode(mode: string): Promise<void> {
-		setPermissionModeSignal(mode);
-		const command = commands().find((entry) => entry.name.includes("permission"));
-		if (command) await runCommand(command.name);
+		// The agent refuses a permission change outside a terminal session, so the label must not move:
+		// it would say "yolo" while the agent kept asking for approval.
+		append({
+			kind: "notice",
+			id: nextId(),
+			text: `Permission mode stays ${permissionMode()}: the agent only changes it from a terminal session, so "${mode}" was not applied.`,
+			tone: "warning",
+		});
 	}
 
 	function invoke<T>(command: string, params: Record<string, unknown> = {}): Promise<T> {

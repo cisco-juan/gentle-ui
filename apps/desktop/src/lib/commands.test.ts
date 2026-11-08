@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { checkCommand, describeCommand, isRunnableCommand } from "./commands.ts";
+import { checkCommand, describeCommand, isRunnableCommand, unknownCommandNotice } from "./commands.ts";
 
 test("a terminal overlay is recognised and named", () => {
 	const verdict = checkCommand("/gentle:agents");
@@ -46,4 +46,37 @@ test("every terminal entry explains itself", () => {
 		assert.equal(described.kind, "terminal", `${name} must be terminal`);
 		assert.ok((described.note ?? "").length > 0, `${name} needs a note`);
 	}
+});
+
+const KNOWN = ["gentle:profiles", "gentle:doctor", "gentle:status", "skill:go-testing"];
+
+test("a mistyped command names the one it was probably meant to be", () => {
+	assert.equal(
+		unknownCommandNotice("/gentle:profile", KNOWN),
+		"/gentle:profile is not a command here. Did you mean /gentle:profiles?",
+	);
+	assert.equal(
+		unknownCommandNotice("/gentle:docter", KNOWN),
+		"/gentle:docter is not a command here. Did you mean /gentle:doctor?",
+	);
+});
+
+test("a known command, with or without arguments, is never flagged", () => {
+	assert.equal(unknownCommandNotice("/gentle:profiles export", KNOWN), null);
+	assert.equal(unknownCommandNotice("/GENTLE:DOCTOR", KNOWN), null);
+});
+
+test("a command the shell already classifies is not flagged", () => {
+	// Terminal-only commands have their own warning, and Pi may not list them.
+	assert.equal(unknownCommandNotice("/history", KNOWN), null);
+});
+
+test("text that only starts with a slash is forwarded, not corrected", () => {
+	assert.equal(unknownCommandNotice("/home/cisco/notes.txt please read it", KNOWN), null);
+	assert.equal(unknownCommandNotice("/zzzzzz", KNOWN), null);
+	assert.equal(unknownCommandNotice("/ng", KNOWN), null, "too short to be a typo of anything");
+});
+
+test("nothing is flagged before the agent has listed its commands", () => {
+	assert.equal(unknownCommandNotice("/gentle:profile", []), null);
 });

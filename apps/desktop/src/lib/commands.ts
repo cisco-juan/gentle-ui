@@ -154,3 +154,62 @@ export function isRunnableCommand(name: string): boolean {
 export function describeCommand(name: string): CommandDescription {
 	return checkCommand(name).description;
 }
+
+const MIN_PREFIX = 3;
+const MIN_TYPO = 4;
+const MAX_TYPO_DISTANCE = 2;
+
+/**
+ * A notice for a slash line that names no command this agent has, when one clearly was meant.
+ *
+ * Only a near miss is reported: a line such as `/home/me/notes.txt` also starts with a slash and is
+ * ordinary text, and refusing a real command is worse than forwarding a mistyped one. Without a close
+ * candidate, or before the agent has listed its commands, the line goes through untouched.
+ */
+export function unknownCommandNotice(line: string, known: readonly string[]): string | null {
+	if (known.length === 0) return null;
+	const typed = line.trim().replace(/^\//, "").split(/\s+/)[0] ?? "";
+	if (!/^[a-z0-9][\w:.-]*$/i.test(typed)) return null;
+
+	const wanted = typed.toLowerCase();
+	if (INDEX.has(wanted) || known.some((name) => name.toLowerCase() === wanted)) return null;
+
+	const near = closestCommand(wanted, known);
+	return near === null ? null : `/${typed} is not a command here. Did you mean /${near}?`;
+}
+
+function closestCommand(wanted: string, known: readonly string[]): string | null {
+	let best: { name: string; distance: number } | null = null;
+	for (const name of known) {
+		const lower = name.toLowerCase();
+		// Typing the start of a name is the commonest slip: `gentle:profile` for `gentle:profiles`.
+		const distance =
+			wanted.length >= MIN_PREFIX && lower.startsWith(wanted)
+				? lower.length - wanted.length
+				: wanted.length >= MIN_TYPO
+					? editDistance(wanted, lower)
+					: Number.POSITIVE_INFINITY;
+		if (distance > MAX_TYPO_DISTANCE) continue;
+		if (best === null || distance < best.distance || (distance === best.distance && name.length < best.name.length)) {
+			best = { name, distance };
+		}
+	}
+	return best === null ? null : best.name;
+}
+
+function editDistance(left: string, right: string): number {
+	let previous = Array.from({ length: right.length + 1 }, (_, index) => index);
+	for (let row = 1; row <= left.length; row++) {
+		const current = [row];
+		for (let column = 1; column <= right.length; column++) {
+			const cost = left[row - 1] === right[column - 1] ? 0 : 1;
+			current[column] = Math.min(
+				(previous[column] ?? 0) + 1,
+				(current[column - 1] ?? 0) + 1,
+				(previous[column - 1] ?? 0) + cost,
+			);
+		}
+		previous = current;
+	}
+	return previous[right.length] ?? 0;
+}
