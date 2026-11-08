@@ -1,4 +1,5 @@
 import { For, Show, type JSX } from "solid-js";
+import { formatChord, isMac } from "../lib/keybindings";
 import { Icon } from "./Icon";
 
 /** Centered sheet used by the settings and shortcut views. */
@@ -48,27 +49,31 @@ export function SettingsSheet(props: {
 	);
 }
 
-const SHORTCUTS: ReadonlyArray<{ keys: string; action: string; ready: boolean }> = [
-	{ keys: "Enter", action: "Send the message", ready: true },
-	{ keys: "Shift + Enter", action: "New line", ready: true },
-	{ keys: "Esc", action: "Interrupt the agent, or close a menu", ready: true },
-	{ keys: "/", action: "List commands", ready: true },
-	{ keys: "Mod + K", action: "Command palette: actions, threads, commands, models", ready: true },
-	{ keys: "Mod + P", action: "Quick open a thread", ready: true },
-	{ keys: "Mod + B", action: "Toggle the rail", ready: true },
-	{ keys: "Mod + Alt + B", action: "Toggle the inspector", ready: true },
-	{ keys: "Mod + Shift + K", action: "This list", ready: true },
-	{ keys: "Mod + ,", action: "Settings", ready: true },
+const SHORTCUTS: ReadonlyArray<{ chord: string; action: string; ready: boolean }> = [
+	{ chord: "Enter", action: "Send the message", ready: true },
+	{ chord: "Shift+Enter", action: "New line", ready: true },
+	{ chord: "Escape", action: "Interrupt the agent, or close a menu", ready: true },
+	{ chord: "/", action: "List commands", ready: true },
+	{ chord: "Mod+K", action: "Command palette: actions, threads, commands, models", ready: true },
+	{ chord: "Mod+P", action: "Quick open a thread", ready: true },
+	{ chord: "Mod+B", action: "Toggle the rail", ready: true },
+	{ chord: "Mod+Alt+B", action: "Toggle the inspector", ready: true },
+	{ chord: "Mod+Shift+K", action: "This list", ready: true },
+	{ chord: "Mod+,", action: "Settings", ready: true },
 ];
 
 export function ShortcutsSheet(props: { onClose: () => void }) {
+	// The sheet has to name the keys this platform actually uses, not the abstract modifier.
+	const mac = isMac(`${navigator.userAgent} ${navigator.platform}`);
+	const pending = SHORTCUTS.filter((shortcut) => !shortcut.ready).length;
+
 	return (
 		<Sheet title="Shortcuts" onClose={props.onClose}>
 			<ul class="shortcuts">
 				<For each={SHORTCUTS}>
 					{(shortcut) => (
 						<li classList={{ planned: !shortcut.ready }}>
-							<kbd>{shortcut.keys}</kbd>
+							<kbd>{formatChord(shortcut.chord, mac)}</kbd>
 							<span>{shortcut.action}</span>
 							<Show when={!shortcut.ready}>
 								<span class="planned-tag">planned</span>
@@ -77,10 +82,12 @@ export function ShortcutsSheet(props: { onClose: () => void }) {
 					)}
 				</For>
 			</ul>
-			<p class="muted">
-				<Icon name="warn" size={12} /> Bindings marked planned are not wired yet; they arrive with the
-				palette so the list never promises a key that does nothing.
-			</p>
+			<Show when={pending > 0}>
+				<p class="muted">
+					<Icon name="warn" size={12} /> Bindings marked planned are not wired yet, so the list never
+					promises a key that does nothing.
+				</p>
+			</Show>
 		</Sheet>
 	);
 }

@@ -106,7 +106,8 @@
 }
 
 .palette-item-hint {
-	flex: 0 1 auto;
+	/* The hint keeps its width and the label gives way: a cut-off timestamp tells nobody anything. */
+	flex: 0 0 auto;
 	max-width: 55%;
 	overflow: hidden;
 	text-overflow: ellipsis;

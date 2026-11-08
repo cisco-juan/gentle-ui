@@ -1178,3 +1178,16 @@ main {
 .chat::-webkit-scrollbar-track {
 	background: transparent;
 }
+
+.tool-toggle {
+	align-self: flex-start;
+	font-family: var(--mono);
+	font-size: 10px;
+	letter-spacing: 0.4px;
+	text-transform: uppercase;
+	color: var(--muted);
+}
+
+.tool-toggle:hover {
+	color: var(--accent);
+}

@@ -6,6 +6,7 @@ type ToolItem = Extract<ChatItem, { kind: "tool" }>;
 /** One tool call: a collapsed summary line that expands into its arguments and output. */
 export function ToolCard(props: { tool: ToolItem }) {
 	const [open, setOpen] = createSignal(false);
+	const [showArgs, setShowArgs] = createSignal(false);
 	const preview = () => props.tool.output.split("\n").slice(0, 3).join("\n");
 	const summary = (): string => {
 		const args = props.tool.args as Record<string, unknown> | null;
@@ -32,10 +33,16 @@ export function ToolCard(props: { tool: ToolItem }) {
 
 			<Show when={open()}>
 				<div class="tool-body">
-					<Show when={props.tool.args && Object.keys(props.tool.args as object).length > 0}>
+					<pre class="output">{props.tool.output.length > 0 ? props.tool.output : "(no output yet)"}</pre>
+					{/* The header already states the command or path, so raw arguments are opt-in detail. */}
+					<Show when={Object.keys((props.tool.args as object | null) ?? {}).length > 0}>
+						<button class="tool-toggle" onClick={() => setShowArgs((current) => !current)}>
+							{showArgs() ? "hide the arguments" : "arguments"}
+						</button>
+					</Show>
+					<Show when={showArgs()}>
 						<pre class="args">{JSON.stringify(props.tool.args, null, 2)}</pre>
 					</Show>
-					<pre class="output">{props.tool.output.length > 0 ? props.tool.output : "(no output yet)"}</pre>
 				</div>
 			</Show>
 
