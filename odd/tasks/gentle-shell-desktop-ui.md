@@ -5,7 +5,8 @@ pinned npm dependencies (`@earendil-works/pi-coding-agent`, `gentle-pi`), never 
 releases flow in as version bumps. The UI is a Tauri v2 shell (system webview) around a Vite frontend,
 with a Node bridge that drives the `pi` agent process.
 
-Status: T1-T8, T11-T18, T22-T27, T29-T32 done; T9 has phase one; T10 and T19-T21 open. Bridge speaks to
+Status: every task is done except T9 phase two and T10 (packaging). Bridge 143 and desktop 160 tests green;
+native assess of `e6eeb76..HEAD` (31 paths, 3609 lines) reads medium and under budget, so no review is due. Bridge speaks to
 `pi --mode rpc` over a tokenised loopback WebSocket and re-answers extension dialogs; 116 bridge and 125
 desktop tests green. See `docs/architecture.md`.
 
@@ -132,8 +133,15 @@ T19 [ ] Bridge: profiles module over gentle-pi's own library (loaded with jiti),
     reader would drop, notes for what it drops silently. S11 — 2b5454b and the fix that follows it.
     Route: inline. Risk items 1 and 3 (writes a file another program owns). Gate pending: independent verifier, then
     native review. Checked off when both are done.
-T20 [ ] UI: Profiles sheet, composer chip, bare `/gentle:profiles` opens the sheet, "use for new threads". S11
-T21 [ ] Docs and log for the profiles work. S11
+T20 [x] UI: Profiles sheet, composer chip, bare `/gentle:profiles` opens the sheet, "use for new threads". S11
+    Verified read-only in the running app: the composer chip lists the five real profiles with the active one marked
+    `default`, and "Manage profiles…" opens the Profiles sheet with the same five, plus Duplicate / Rename / Delete /
+    "Use for new threads", the orchestrator mode switch (organic, full-delegation) and each agent's model, thinking
+    and tier. Nothing was written to the user's file during this check.
+T21 [x] Docs and log for the profiles work. S11
+    `docs/architecture.md` covers the command's argument behaviour (56-57) and the composer chips (106), and L9 holds
+    the design: where the file lives, why the bridge reads and writes it with gentle-pi's own library, the backup
+    rule, and what the reader drops silently. Risk: none (documentation).
 
 T22 [x] The permission chip writes the default new threads start in, offers every mode, and says which modes are
     terminal-only. The fake thread mode (`chat.permissionMode()`, hard-coded `normal`) is gone with its no-op
@@ -374,6 +382,10 @@ T28 [x] A thread opens showing the oldest row of its first page for a moment bef
     Found while verifying T27; measured, not guessed. Fixed by tracking `loading` in the follow effect, so the pin
     runs again once the skeleton is gone and the scroll height is real. Verified in the app: the first frame with
     rows already sits at the end (atEnd 0), where before it showed atEnd 3245 and jumped later. Risk: none.
+
+Observation while closing T20: `profiles.json` holds a profile literally named `NaN`, next to `current`,
+`Claude-Grok`, `OnlyGrok` and `grok-opencode`. The UI renders it faithfully, so it is data, not a display bug — most
+likely created by an earlier session from a numeric parse. Left untouched: deleting a profile is the user's call.
 
 L14. 2026-11-08. Delivery plan the user announced for when these tasks are done, verbatim: "al finalizar todas
 estas tareas vamos a crear el repo en mi perfil, lo llamaremos gentle-ui, tendremos la documentacion completa en
