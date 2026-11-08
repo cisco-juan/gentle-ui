@@ -363,10 +363,10 @@ main {
 	min-height: 0;
 	overflow-y: auto;
 	overscroll-behavior: contain;
-	padding: 26px clamp(18px, 7vw, 120px) 8px;
+	padding: 32px clamp(18px, 7vw, 120px) 10px;
 	display: flex;
 	flex-direction: column;
-	gap: 22px;
+	gap: 26px;
 }
 
 .empty {
@@ -640,7 +640,8 @@ main {
 
 .tool .output.preview {
 	padding: 0 11px 9px;
-	color: var(--muted);
+	color: var(--text-soft);
+	opacity: 0.75;
 	max-height: 58px;
 	overflow: hidden;
 }

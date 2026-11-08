@@ -1,4 +1,4 @@
-import { For, Show, type JSX } from "solid-js";
+import { For, Show, createSignal, type JSX } from "solid-js";
 import type { ReviewConsent, ReviewStatusView } from "@gentle-shell/protocol";
 import "../review.css";
 import { modeLabel, modeTone, type ReviewPanel } from "../state/review";
@@ -119,7 +119,7 @@ function AssessmentBlock(props: { panel: ReviewPanel }): JSX.Element {
 	return (
 		<section class="review-block">
 			<h3 class="review-title">risk</h3>
-			<Show when={view().assessmentError}>{(error) => <p class="inspector-error">{error()}</p>}</Show>
+			<Show when={view().assessmentError}>{(error) => <Clamped text={error()} />}</Show>
 			<Show when={assessment()}>
 				{(answer) => (
 					<>
@@ -147,6 +147,36 @@ function AssessmentBlock(props: { panel: ReviewPanel }): JSX.Element {
 				)}
 			</Show>
 		</section>
+	);
+}
+
+/**
+ * A provider message, clamped.
+ *
+ * The provider explains itself at length, with digests and inventory hashes. Three lines are enough to
+ * act on; the rest is one click away instead of pushing the rest of the panel off screen.
+ */
+function Clamped(props: { text: string; lines?: number }): JSX.Element {
+	const [open, setOpen] = createSignal(false);
+	const limit = () => props.lines ?? 3;
+	const lineCount = () => props.text.split("\n").length;
+	const hidden = () => !open() && lineCount() > limit();
+
+	return (
+		<div class="review-clamped">
+			<p
+				class="inspector-error"
+				classList={{ clamped: hidden() }}
+				style={hidden() ? { "-webkit-line-clamp": String(limit()) } : undefined}
+			>
+				{props.text}
+			</p>
+			<Show when={lineCount() > limit()}>
+				<button type="button" class="review-more" onClick={() => setOpen((current) => !current)}>
+					{open() ? "less" : "details"}
+				</button>
+			</Show>
+		</div>
 	);
 }
 

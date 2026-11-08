@@ -34,6 +34,9 @@ export default function App() {
 	const [palette, setPalette] = createSignal<PaletteMode>(null);
 	const layout = createLayout();
 
+	// A handle for inspecting the running shell from the console; development builds only.
+	if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__chat = chat;
+
 	onMount(() => {
 		void (async () => {
 			// The connection state stays "connecting" while this runs, which is exactly what the user

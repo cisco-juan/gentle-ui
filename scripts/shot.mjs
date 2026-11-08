@@ -113,6 +113,22 @@ async function main() {
 		mobile: false,
 	});
 	await sessionSend("Page.enable");
+	await sessionSend("Runtime.enable");
+
+	const failures = [];
+	socket.addEventListener("message", (event) => {
+		const message = JSON.parse(String(event.data));
+		if (message.method === "Runtime.exceptionThrown") {
+			const detail = message.params?.exceptionDetails;
+			failures.push(detail?.exception?.description ?? detail?.text ?? "unknown exception");
+		}
+		if (message.method === "Runtime.consoleAPICalled" && message.params?.type === "error") {
+			failures.push(message.params.args.map((arg) => arg.description ?? arg.value ?? "").join(" "));
+		}
+	});
+	process.on("exit", () => {
+		if (failures.length > 0) process.stdout.write(`page failures:\n${failures.slice(0, 4).join("\n")}\n`);
+	});
 	await sessionSend("Page.navigate", { url });
 	await sleep(1200);
 
@@ -128,6 +144,10 @@ async function main() {
 			await sleep(250);
 		}
 	}
+
+
+	// Settle before interacting: a screenshot taken while the shell is still loading is a lie.
+	await sleep(settle);
 
 	if (evalScript) {
 		const evaluation = await sessionSend("Runtime.evaluate", {
@@ -165,7 +185,7 @@ async function main() {
 		}
 	}
 
-	await sleep(settle);
+	await sleep(300);
 
 	const shot = await sessionSend("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
 	writeFileSync(out, Buffer.from(shot.data, "base64"));

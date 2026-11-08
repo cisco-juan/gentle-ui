@@ -85,6 +85,33 @@ export function liveChat(): ChatController | null {
 	return live;
 }
 
+const LAST_THREAD_KEY = "gentle-shell:last-thread:v1";
+
+/** The thread this install was last in, so a relaunch lands where the work was left. */
+function readLastThread(): string | null {
+	try {
+		return window.localStorage.getItem(LAST_THREAD_KEY);
+	} catch {
+		return null;
+	}
+}
+
+function writeLastThread(path: string): void {
+	try {
+		window.localStorage.setItem(LAST_THREAD_KEY, path);
+	} catch {
+		// Remembering the thread is a convenience, not a requirement.
+	}
+}
+
+function forgetLastThread(): void {
+	try {
+		window.localStorage.removeItem(LAST_THREAD_KEY);
+	} catch {
+		// Nothing to do: an unreadable store is already the fallback.
+	}
+}
+
 /** Translate Pi's record stream into renderable chat items. */
 export function createChatController(options: { url: string; cwd: string }): ChatController {
 	const [items, setItems] = createSignal<ChatItem[]>([]);
@@ -287,11 +314,20 @@ export function createChatController(options: { url: string; cwd: string }): Cha
 			const opened = await next.open(options.cwd);
 			threadId = opened.threadId;
 			client = next;
+			if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__bridge = next;
 			setActivePath(sessionFileOf(opened.state));
 			setConnection("connected");
 			await bootstrap(next, opened.state);
 			await loadHistory(next, opened.threadId);
 			await refreshThreads();
+
+			// A workspace you come back to should be the one you left: reopen the thread you were in,
+			// and fall back to the fresh session when that file is gone.
+			const remembered = readLastThread();
+			const current = (opened.state as { sessionFile?: string } | null)?.sessionFile ?? null;
+			if (remembered !== null && remembered !== current) {
+				await switchThread(remembered).catch(() => forgetLastThread());
+			}
 		} catch (error) {
 			setConnection("failed");
 			append({
@@ -471,6 +507,7 @@ export function createChatController(options: { url: string; cwd: string }): Cha
 			});
 			await loadHistory(active, id);
 			await refreshState(active, id);
+			writeLastThread(path);
 		} catch (error) {
 			append({
 				kind: "notice",
@@ -495,8 +532,11 @@ export function createChatController(options: { url: string; cwd: string }): Cha
 		if (!client) return;
 		try {
 			setThreads(await client.sessions());
-		} catch {
-			// The bridge may be older than this UI; a missing index must not break the chat.
+		} catch (error) {
+			// A missing index must not break the chat, but it must not vanish either: an empty rail
+			// with no explanation is indistinguishable from "you have no threads".
+			console.error("the thread list could not be read", error);
+			setHint(`could not list threads: ${error instanceof Error ? error.message : String(error)}`);
 		}
 	}
 
@@ -542,7 +582,8 @@ export function createChatController(options: { url: string; cwd: string }): Cha
 		);
 	}
 
-	function errorText(error: unknown): string {
+
+function errorText(error: unknown): string {
 		return error instanceof Error ? error.message : String(error);
 	}
 
