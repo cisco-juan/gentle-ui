@@ -19,6 +19,8 @@ import type { BridgeClient } from "../lib/bridge";
 /** The minimal slice of the chat controller the inspector needs; `App.tsx` never leaks in here. */
 export interface ChatControllerLike {
 	readonly bridge: Accessor<BridgeClient | null>;
+	/** Reactive, unlike `bridge`: the panels use it to tell "not asked yet" from "asked, nothing there". */
+	readonly connection: Accessor<"connecting" | "connected" | "failed" | "disconnected">;
 	readonly currentThread: Accessor<string | null>;
 	invoke<T>(command: string, params?: Record<string, unknown>): Promise<T>;
 }

@@ -6,6 +6,7 @@ import type { ChatItem } from "../state/chat";
 import { RichText } from "./RichText";
 import { PermissionCard } from "./PermissionCard";
 import { ToolCard } from "./ToolCard";
+import { Skeleton } from "./Skeleton";
 
 const PLATFORM_MAC = isMac(`${navigator.userAgent} ${navigator.platform}`);
 
@@ -15,7 +16,31 @@ type ToolItem = Extract<ChatItem, { kind: "tool" }>;
 type PermissionItem = Extract<ChatItem, { kind: "permission" }>;
 type NoticeItem = Extract<ChatItem, { kind: "notice" }>;
 
+/** The shape of a conversation, shown while a thread is being opened or the agent is still starting. */
+function ChatSkeleton() {
+	return (
+		<div class="skeleton-chat" role="status" aria-busy="true" aria-label="Loading the conversation">
+			<div class="skeleton-bubble">
+				<Skeleton width="34px" height="9px" />
+				<Skeleton width="42%" height="12px" />
+			</div>
+			<div class="skeleton-bubble">
+				<Skeleton width="42px" height="9px" />
+				<Skeleton width="94%" height="11px" />
+				<Skeleton width="88%" height="11px" />
+				<Skeleton width="72%" height="11px" />
+			</div>
+			<div class="skeleton-bubble">
+				<Skeleton width="34px" height="9px" />
+				<Skeleton width="56%" height="12px" />
+			</div>
+		</div>
+	);
+}
+
 export function ChatView(props: {
+	/** True while there is nothing to show yet because the content is on its way. */
+	loading: Accessor<boolean>;
 	items: Accessor<ChatItem[]>;
 	draft: Accessor<string>;
 	running: Accessor<boolean>;
@@ -41,7 +66,11 @@ export function ChatView(props: {
 				if (scroller) following = isNearBottom(scroller);
 			}}
 		>
-			<Show when={props.items().length === 0 && props.draft().length === 0}>
+			<Show when={props.loading()}>
+				<ChatSkeleton />
+			</Show>
+
+			<Show when={!props.loading() && props.items().length === 0 && props.draft().length === 0}>
 				<div class="empty">
 					<h1>gentle shell</h1>
 					<p>
@@ -51,7 +80,7 @@ export function ChatView(props: {
 				</div>
 			</Show>
 
-			<For each={props.items()}>
+			<For each={props.loading() ? [] : props.items()}>
 				{(item) => (
 					// One row that cannot render must not take the transcript with it: the error would otherwise abort
 					// every later update at the same place and leave the pane blank.

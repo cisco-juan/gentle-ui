@@ -15,6 +15,7 @@ import { REVIEW_TAB, createReviewPanel } from "../state/review";
 import { MEMORY_TAB, createMemoryPanel } from "../state/memory";
 import { ReviewTab } from "./ReviewTab";
 import { MemoryTab } from "./MemoryTab";
+import { SkeletonLines } from "./Skeleton";
 
 /** Tabs that own their state and their scroller instead of reusing the inspector's four reads. */
 type OwnedTab = "review" | "memory";
@@ -60,6 +61,9 @@ export function Inspector(props: { chat: ChatControllerLike; onClose?: () => voi
 		if (!tabStrip) return;
 		setMoreTabs(tabStrip.scrollLeft + tabStrip.clientWidth < tabStrip.scrollWidth - 1);
 	}
+
+	/** False until the agent is connected: before that nothing has been read, so no tab has anything true to say. */
+	const ready = (): boolean => props.chat.connection() !== "connecting";
 
 	function activeTab(id: InspectorTab | OwnedTab): boolean {
 		const owned = ownedTab();
@@ -114,22 +118,26 @@ export function Inspector(props: { chat: ChatControllerLike; onClose?: () => voi
 				class="inspector-body"
 				classList={{ "for-review": ownedTab() === "review", "for-memory": ownedTab() === "memory" }}
 			>
-				<Show when={ownedTab() === "review"}>
+				{/* Until the agent is connected nothing has been read: a skeleton, not four empty-looking panels. */}
+				<Show when={!ready()}>
+					<SkeletonLines count={6} label="Waiting for the agent" />
+				</Show>
+				<Show when={ready() && ownedTab() === "review"}>
 					<ReviewTab review={review} />
 				</Show>
-				<Show when={ownedTab() === "memory"}>
+				<Show when={ready() && ownedTab() === "memory"}>
 					<MemoryTab memory={memory} />
 				</Show>
-				<Show when={ownedTab() === null && inspector.tab() === "changes"}>
+				<Show when={ready() && ownedTab() === null && inspector.tab() === "changes"}>
 					<ChangesTab inspector={inspector} />
 				</Show>
-				<Show when={ownedTab() === null && inspector.tab() === "files"}>
+				<Show when={ready() && ownedTab() === null && inspector.tab() === "files"}>
 					<FilesTab inspector={inspector} />
 				</Show>
-				<Show when={ownedTab() === null && inspector.tab() === "tasks"}>
+				<Show when={ready() && ownedTab() === null && inspector.tab() === "tasks"}>
 					<TasksTab inspector={inspector} />
 				</Show>
-				<Show when={ownedTab() === null && inspector.tab() === "agents"}>
+				<Show when={ready() && ownedTab() === null && inspector.tab() === "agents"}>
 					<AgentsTab inspector={inspector} />
 				</Show>
 			</div>
@@ -164,6 +172,9 @@ function ChangesTab(props: { inspector: Inspector }): JSX.Element {
 			</div>
 
 			<Show when={view().error}>{(error) => <p class="inspector-error">{error()}</p>}</Show>
+			<Show when={view().loading && view().status === null}>
+				<SkeletonLines count={5} label="Reading the working tree" />
+			</Show>
 			<Show when={view().status?.isRepo === false && view().error === null}>
 				<p class="inspector-empty">This workspace is not a git repository.</p>
 			</Show>
@@ -299,6 +310,9 @@ function FilesTab(props: { inspector: Inspector }): JSX.Element {
 				</For>
 			</ul>
 
+			<Show when={view().loading && view().entries.length === 0}>
+				<SkeletonLines count={6} label="Reading the directory" />
+			</Show>
 			<Show when={!view().loading && view().error === null && view().entries.length === 0}>
 				<p class="inspector-empty">Empty directory.</p>
 			</Show>
@@ -319,6 +333,9 @@ function TasksTab(props: { inspector: Inspector }): JSX.Element {
 			</div>
 
 			<Show when={view().error}>{(error) => <p class="inspector-error">{error()}</p>}</Show>
+			<Show when={view().loading && view().files.length === 0}>
+				<SkeletonLines count={4} label="Reading the task lists" />
+			</Show>
 			<Show when={!view().loading && view().error === null && view().files.length === 0}>
 				<p class="inspector-empty">No task lists in odd/tasks.</p>
 			</Show>

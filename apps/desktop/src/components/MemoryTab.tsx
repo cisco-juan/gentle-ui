@@ -1,6 +1,7 @@
 import { For, Show, createSignal, type JSX } from "solid-js";
 import "../memory.css";
 import { groupByType, projectLabel, type MemoryPanel } from "../state/memory";
+import { SkeletonLines } from "./Skeleton";
 
 /**
  * Engram's memory for this workspace, read-only.
@@ -70,7 +71,7 @@ export function MemoryTab(props: { memory: MemoryPanel }): JSX.Element {
 				<Show when={view().error}>{(error) => <p class="inspector-error">{error()}</p>}</Show>
 
 				<Show when={view().loading && context() === null}>
-					<p class="inspector-empty">Reading this project's memory…</p>
+					<SkeletonLines count={5} label="Reading this project's memory" />
 				</Show>
 
 				{/* The project Engram derived, and what it says it remembers, or exactly why it cannot say. */}

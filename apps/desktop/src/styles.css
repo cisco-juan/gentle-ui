@@ -1266,3 +1266,68 @@ button:focus-visible,
 	font-family: var(--mono);
 	font-size: 11.5px;
 }
+
+/* ---------- loading skeletons ---------- */
+
+.skeleton {
+	display: block;
+	border-radius: 6px;
+	background: linear-gradient(90deg, var(--surface) 25%, var(--surface-2) 50%, var(--surface) 75%);
+	background-size: 200% 100%;
+	animation: skeleton-shimmer 1.4s ease-in-out infinite;
+}
+
+@keyframes skeleton-shimmer {
+	from {
+		background-position: 200% 0;
+	}
+	to {
+		background-position: -200% 0;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.skeleton {
+		animation: none;
+	}
+}
+
+.skeleton-lines {
+	display: flex;
+	flex-direction: column;
+	gap: 9px;
+	padding: 6px 2px;
+}
+
+.skeleton-rows {
+	display: flex;
+	flex-direction: column;
+	gap: 14px;
+	padding: 10px 12px;
+}
+
+.skeleton-row {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 14px;
+}
+
+.skeleton-chat {
+	display: flex;
+	flex-direction: column;
+	gap: 22px;
+	padding: 28px 0;
+}
+
+.skeleton-bubble {
+	display: flex;
+	flex-direction: column;
+	gap: 9px;
+}
+
+/* The row the person just clicked, until its history is on screen. */
+.thread.pending {
+	opacity: 0.6;
+	cursor: progress;
+}

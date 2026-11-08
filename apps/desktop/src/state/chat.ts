@@ -3,6 +3,7 @@ import type { ExtensionUiRequest, ExtensionUiResponse, ServerMessage, SessionSum
 import { BridgeClient } from "../lib/bridge";
 import { checkCommand, unknownCommandNotice } from "../lib/commands";
 import { setModelParams } from "../lib/models";
+import { readCachedThreads, writeCachedThreads, type TextStorage } from "../lib/thread-cache";
 import { answerLabel } from "../lib/permission";
 import { extensionErrorText, promptParams, startsRun, wasCancelled } from "../lib/prompt-outcome";
 import {
@@ -50,6 +51,12 @@ export interface ChatController {
 	readonly hint: Accessor<string>;
 	readonly permissionMode: Accessor<string>;
 	readonly threads: Accessor<readonly SessionSummary[]>;
+	/** True until the bridge has answered for the first time, so the rail can show a skeleton, not "no threads". */
+	readonly threadsLoading: Accessor<boolean>;
+	/** The thread being opened, from the click until its history is on screen; null otherwise. */
+	readonly opening: Accessor<string | null>;
+	/** True while the model list is being asked for. */
+	readonly modelsLoading: Accessor<boolean>;
 	/** Session file the open thread is showing, `null` for a thread with no file yet. */
 	readonly activePath: Accessor<string | null>;
 	/** Live socket, so panels outside the transcript can ask their own questions. */
@@ -91,6 +98,15 @@ let live: ChatController | null = null;
 
 export function liveChat(): ChatController | null {
 	return live;
+}
+
+/** `localStorage`, or null where the browser will not hand it over (a private window, blocked site data). */
+function threadStorage(): TextStorage | null {
+	try {
+		return window.localStorage;
+	} catch {
+		return null;
+	}
 }
 
 const LAST_THREAD_KEY = "gentle-shell:last-thread:v1";
@@ -136,7 +152,11 @@ export function createChatController(options: { url: string; cwd: string }): Cha
 	const permissionMode = (): string => "normal";
 	const [hint, setHint] = createSignal("");
 	let hintTimer: ReturnType<typeof setTimeout> | undefined;
-	const [threads, setThreads] = createSignal<readonly SessionSummary[]>([]);
+	// The last list the bridge gave, so a relaunch paints the rail at once and corrects it when the answer comes.
+	const [threads, setThreads] = createSignal<readonly SessionSummary[]>(readCachedThreads(threadStorage() ?? { getItem: () => null, setItem: () => undefined }));
+	const [threadsLoading, setThreadsLoading] = createSignal(true);
+	const [opening, setOpening] = createSignal<string | null>(null);
+	const [modelsLoading, setModelsLoading] = createSignal(false);
 	const [activePath, setActivePath] = createSignal<string | null>(null);
 	const [attachments, setAttachments] = createSignal<readonly Attachment[]>([]);
 
@@ -144,6 +164,8 @@ export function createChatController(options: { url: string; cwd: string }): Cha
 	/** Detaches the listeners of the current connection. */
 	let teardown: (() => void) | null = null;
 	let connecting = false;
+	/** The connection being set up or in use; an answer that belongs to an older one is dropped. */
+	let current: BridgeClient | null = null;
 	let threadId: string | null = null;
 	let counter = 0;
 	let attachmentCounter = 0;
@@ -332,6 +354,7 @@ export function createChatController(options: { url: string; cwd: string }): Cha
 		teardown = null;
 		client?.close();
 		client = null;
+		current = null;
 		threadId = null;
 	}
 
@@ -360,7 +383,9 @@ export function createChatController(options: { url: string; cwd: string }): Cha
 		const resume = activePath() ?? readLastThread();
 		dropClient();
 		setConnection("connecting");
+		if (threads().length === 0) setThreadsLoading(true);
 		const next = new BridgeClient(options.url);
+		current = next;
 		try {
 			await next.connect();
 			const stopRecords = next.subscribe(handle);
@@ -369,6 +394,9 @@ export function createChatController(options: { url: string; cwd: string }): Cha
 				stopRecords();
 				stopClose();
 			};
+			// The session index is the bridge's own work and does not need Pi, which takes ~2 s to start:
+			// asking now puts the rail on screen long before the agent is ready.
+			void loadThreads(next);
 			const opened = await next.open(options.cwd);
 			threadId = opened.threadId;
 			client = next;
@@ -377,7 +405,6 @@ export function createChatController(options: { url: string; cwd: string }): Cha
 			setConnection("connected");
 			await bootstrap(next, opened.state);
 			await loadHistory(next, opened.threadId);
-			await refreshThreads();
 
 			// A workspace you come back to should be the one you left: reopen the thread you were in,
 			// and fall back to the fresh session when that file is gone.
@@ -392,8 +419,10 @@ export function createChatController(options: { url: string; cwd: string }): Cha
 			teardown = null;
 			next.close();
 			client = null;
+			current = null;
 			threadId = null;
 			setConnection("failed");
+			setThreadsLoading(false);
 			append({
 				kind: "notice",
 				id: nextId(),
@@ -606,7 +635,7 @@ export function createChatController(options: { url: string; cwd: string }): Cha
 			setActivePath(path);
 		});
 		if (path !== null) writeLastThread(path);
-		await refreshThreads();
+		void refreshThreads();
 	}
 
 	/** Switch the open Pi thread to a session file and redraw the transcript from its history. */
@@ -621,6 +650,9 @@ export function createChatController(options: { url: string; cwd: string }): Cha
 		const active = client;
 		const id = threadId;
 		if (running()) await interrupt();
+		// From here the pane shows a skeleton and the row is marked: the switch takes a moment and used
+		// to give no sign at all that the click had been heard.
+		setOpening(path);
 		try {
 			const answer = await active.command(id, "switch_session", { sessionPath: path });
 			if (wasCancelled(answer)) throw new Error("an extension cancelled switching threads");
@@ -632,14 +664,17 @@ export function createChatController(options: { url: string; cwd: string }): Cha
 				setHint("");
 				setActivePath(path);
 			});
-			await loadHistory(active, id);
-			await refreshState(active, id);
+			// The two reads do not depend on each other, so they travel together.
+			await Promise.all([loadHistory(active, id), refreshState(active, id)]);
 			writeLastThread(path);
 		} catch (error) {
 			if (!options.quiet) append({ kind: "notice", id: nextId(), text: errorText(error), tone: "error" });
 			return false;
+		} finally {
+			setOpening(null);
 		}
-		await refreshThreads();
+		// Refreshing the rail is not what the person is waiting for.
+		void refreshThreads();
 		return true;
 	}
 
@@ -653,9 +688,23 @@ export function createChatController(options: { url: string; cwd: string }): Cha
 	/** Re-read the bridge's session index. Failures keep the rail on its last known list. */
 	async function refreshThreads(): Promise<void> {
 		if (!client) return;
+		await loadThreads(client);
+	}
+
+	/** Ask `active` for the session index; an answer for a connection that has since been replaced is dropped. */
+	async function loadThreads(active: BridgeClient): Promise<void> {
 		try {
-			setThreads(await client.sessions());
+			const list = await active.sessions();
+			if (current !== active) return;
+			batch(() => {
+				setThreads(list);
+				setThreadsLoading(false);
+			});
+			const storage = threadStorage();
+			if (storage !== null) writeCachedThreads(storage, list);
 		} catch (error) {
+			if (current !== active) return;
+			setThreadsLoading(false);
 			// A missing index must not break the chat, but it must not vanish either: an empty rail
 			// with no explanation is indistinguishable from "you have no threads".
 			console.error("the thread list could not be read", error);
@@ -729,6 +778,7 @@ function errorText(error: unknown): string {
 
 	async function loadModels(): Promise<void> {
 		if (!client || !threadId) return;
+		setModelsLoading(true);
 		try {
 			const listed = await client.command<
 				Array<{ provider: string; id: string; contextWindow?: number }> | { models?: Array<{ provider: string; id: string }> }
@@ -736,6 +786,8 @@ function errorText(error: unknown): string {
 			setModels(Array.isArray(listed) ? listed : (listed.models ?? []));
 		} catch (error) {
 			append({ kind: "notice", id: nextId(), text: errorText(error), tone: "error" });
+		} finally {
+			setModelsLoading(false);
 		}
 	}
 
@@ -785,6 +837,9 @@ function errorText(error: unknown): string {
 		permissionMode,
 		hint,
 		threads,
+		threadsLoading,
+		opening,
+		modelsLoading,
 		activePath,
 		bridge: () => client,
 		currentThread: () => threadId,

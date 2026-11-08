@@ -2,6 +2,7 @@ import { For, Show, createMemo, createSignal, onCleanup, onMount } from "solid-j
 import { AttachmentStrip } from "./AttachmentStrip";
 import { describeCommand } from "../lib/commands";
 import { cycle } from "../lib/menu";
+import { SkeletonLines } from "./Skeleton";
 import { Icon } from "./Icon";
 import type { Attachment } from "../lib/attachments";
 import { liveChat } from "../state/chat";
@@ -326,7 +327,9 @@ export function Composer(props: {
 									</For>
 								</ul>
 								<Show when={filteredModels().length === 0}>
-									<p class="popover-empty">No models reported by the agent.</p>
+									<Show when={chat()?.modelsLoading() ?? false} fallback={<p class="popover-empty">No models reported by the agent.</p>}>
+										<SkeletonLines count={5} label="Loading models" />
+									</Show>
 								</Show>
 							</div>
 						</Show>

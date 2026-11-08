@@ -203,6 +203,8 @@ export default function App() {
 				onCollapse={() => layout.toggleRail()}
 				project={PROJECT_LABEL || "current workspace"}
 				connection={chat.connection()}
+				loading={chat.threadsLoading()}
+				opening={chat.opening()}
 				statuses={chat.statuses()}
 				threads={chat.threads()}
 				activePath={chat.activePath()}
@@ -221,6 +223,7 @@ export default function App() {
 
 			<main>
 				<ChatView
+					loading={() => chat.opening() !== null || (chat.connection() === "connecting" && chat.items().length === 0)}
 					items={chat.items}
 					draft={chat.draft}
 					running={chat.running}

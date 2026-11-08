@@ -2,6 +2,7 @@ import { For, Show, createSignal, type JSX } from "solid-js";
 import type { ReviewConsent, ReviewStatusView } from "@gentle-shell/protocol";
 import "../review.css";
 import { modeLabel, modeTone, type ReviewPanel } from "../state/review";
+import { SkeletonLines } from "./Skeleton";
 
 /**
  * Native review (receipt-driven development), first phase.
@@ -39,6 +40,10 @@ export function ReviewTab(props: { review: ReviewPanel }): JSX.Element {
 				</Show>
 
 				{/* Nothing has been asked yet and nothing failed: say so instead of showing an empty shell. */}
+				<Show when={view().loading && status() === null}>
+					<SkeletonLines count={5} label="Reading the review state" />
+				</Show>
+
 				<Show when={status() === null && view().error === null && !view().loading}>
 					<p class="inspector-empty">No review state yet. Refresh to ask the provider.</p>
 				</Show>

@@ -2,6 +2,7 @@ import { For, Show, createEffect, createMemo, createSignal } from "solid-js";
 import type { SessionSummary } from "@gentle-shell/protocol";
 import { groupThreads, relativeTime, type ThreadGroup } from "../lib/threads";
 import { Icon } from "./Icon";
+import { Skeleton } from "./Skeleton";
 
 /**
  * Left rail.
@@ -13,6 +14,10 @@ import { Icon } from "./Icon";
 export function Sidebar(props: {
 	project: string;
 	connection: "connecting" | "connected" | "failed" | "disconnected";
+	/** True until the bridge has answered once: the rail shows a skeleton, not "no threads". */
+	loading: boolean;
+	/** The thread being opened, marked on its row until its history is on screen. */
+	opening: string | null;
 	statuses: Record<string, string>;
 	threads: readonly SessionSummary[];
 	activePath: string | null;
@@ -120,12 +125,20 @@ export function Sidebar(props: {
 					<span>Threads</span>
 				</div>
 
-				<Show when={groups().length > 0} fallback={<p class="rail-empty">No saved threads yet.</p>}>
+				<Show
+					when={groups().length > 0}
+					fallback={
+						<Show when={props.loading} fallback={<p class="rail-empty">No saved threads yet.</p>}>
+							<ThreadsSkeleton />
+						</Show>
+					}
+				>
 					<For each={groups()}>
 						{(group) => (
 							<ThreadGroupView
 								group={group}
 								activePath={props.activePath}
+								opening={props.opening}
 								collapsed={!expanded().has(group.cwd)}
 								onToggle={() => toggleGroup(group.cwd)}
 								onSelect={props.onSelectThread}
@@ -148,9 +161,28 @@ export function Sidebar(props: {
 	);
 }
 
+/** Rows shaped like the thread list, so the rail keeps its layout while the list is on its way. */
+function ThreadsSkeleton() {
+	const titles = ["78%", "62%", "84%", "55%", "70%", "66%", "48%"];
+	return (
+		<div class="skeleton-rows" role="status" aria-busy="true" aria-label="Loading threads">
+			<Skeleton width="38%" height="11px" />
+			<For each={titles}>
+				{(width) => (
+					<div class="skeleton-row">
+						<Skeleton width={width} height="10px" />
+						<Skeleton width="22px" height="9px" />
+					</div>
+				)}
+			</For>
+		</div>
+	);
+}
+
 function ThreadGroupView(props: {
 	group: ThreadGroup;
 	activePath: string | null;
+	opening: string | null;
 	collapsed: boolean;
 	onToggle: () => void;
 	onSelect: (path: string) => void;
@@ -168,7 +200,8 @@ function ThreadGroupView(props: {
 					{(thread) => (
 						<button
 							class="thread"
-							classList={{ active: thread.path === props.activePath }}
+							classList={{ active: thread.path === props.activePath, pending: thread.path === props.opening }}
+							aria-busy={thread.path === props.opening}
 							title={`${thread.title}\n${thread.path}`}
 							onClick={() => props.onSelect(thread.path)}
 						>
