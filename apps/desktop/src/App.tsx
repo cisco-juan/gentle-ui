@@ -53,6 +53,19 @@ export default function App() {
 		})();
 	});
 
+	/** Hand the keyboard back to the composer: closing an overlay should not leave typing going nowhere. */
+	const focusComposer = (): void => {
+		document.dispatchEvent(new CustomEvent("gentle:focus-composer"));
+	};
+	const closePalette = (): void => {
+		setPalette(null);
+		focusComposer();
+	};
+	const closeSheet = (): void => {
+		setSheet(null);
+		focusComposer();
+	};
+
 	const groups = createMemo<PaletteGroup[]>(() => {
 		const mode = palette();
 		if (mode === null) return [];
@@ -158,9 +171,10 @@ export default function App() {
 					document.dispatchEvent(new CustomEvent("gentle:submit"));
 					break;
 				case "close":
-					if (palette() !== null) setPalette(null);
-					else if (sheet() !== null) setSheet(null);
-					else void chat.interrupt();
+					if (palette() !== null) closePalette();
+					else if (sheet() !== null) closeSheet();
+					// The composer may have a menu open: it cancels the event, and Escape closes that instead.
+					else if (document.dispatchEvent(new CustomEvent("gentle:dismiss", { cancelable: true }))) void chat.interrupt();
 					break;
 			}
 		};
@@ -186,6 +200,7 @@ export default function App() {
 			style={{ "grid-template-columns": gridTemplate(layout.effective()) }}
 		>
 			<Sidebar
+				onCollapse={() => layout.toggleRail()}
 				project={PROJECT_LABEL || "current workspace"}
 				connection={chat.connection()}
 				statuses={chat.statuses()}
@@ -247,13 +262,13 @@ export default function App() {
 			/>
 			<Inspector chat={chat} onClose={() => layout.toggleInspector()} />
 
-			<Palette open={palette() !== null} onClose={() => setPalette(null)} groups={groups()} />
+			<Palette open={palette() !== null} onClose={closePalette} groups={groups()} />
 
 			<Show when={sheet() === "settings"}>
-				<SettingsSheet facts={facts()} onClose={() => setSheet(null)} />
+				<SettingsSheet facts={facts()} onClose={closeSheet} />
 			</Show>
 			<Show when={sheet() === "shortcuts"}>
-				<ShortcutsSheet onClose={() => setSheet(null)} />
+				<ShortcutsSheet onClose={closeSheet} />
 			</Show>
 
 			<Show when={bridgeFailure()}>

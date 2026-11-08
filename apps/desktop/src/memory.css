@@ -259,3 +259,7 @@
 	line-height: 1.45;
 	color: var(--muted);
 }
+
+.memory-input:focus-visible {
+	box-shadow: 0 0 0 1.5px var(--accent);
+}

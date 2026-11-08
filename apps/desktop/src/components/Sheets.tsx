@@ -1,12 +1,25 @@
-import { For, Show, type JSX } from "solid-js";
+import { For, Show, onMount, type JSX } from "solid-js";
 import { formatChord, isMac } from "../lib/keybindings";
 import { Icon } from "./Icon";
 
 /** Centered sheet used by the settings and shortcut views. */
 export function Sheet(props: { title: string; onClose: () => void; children: JSX.Element }) {
+	let dialog: HTMLDivElement | undefined;
+	// Focus moves into the sheet, so Escape reaches the keymap as a close instead of landing in the
+	// composer, where it would interrupt the agent behind a sheet the reader is looking at.
+	onMount(() => dialog?.focus());
+
 	return (
 		<div class="sheet-backdrop" onClick={() => props.onClose()}>
-			<div class="sheet" onClick={(event) => event.stopPropagation()}>
+			<div
+				class="sheet"
+				ref={dialog}
+				role="dialog"
+				aria-modal="true"
+				aria-label={props.title}
+				tabindex={-1}
+				onClick={(event) => event.stopPropagation()}
+			>
 				<header>
 					<h2>{props.title}</h2>
 					<button class="icon-btn" onClick={() => props.onClose()} title="Close">

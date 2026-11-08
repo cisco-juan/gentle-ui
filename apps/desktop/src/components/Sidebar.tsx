@@ -16,6 +16,7 @@ export function Sidebar(props: {
 	statuses: Record<string, string>;
 	threads: readonly SessionSummary[];
 	activePath: string | null;
+	onCollapse: () => void;
 	onNewThread: () => void;
 	onSelectThread: (path: string) => void;
 	onOpenSettings: () => void;
@@ -67,7 +68,7 @@ export function Sidebar(props: {
 	return (
 		<aside class="sidebar">
 			<div class="sidebar-head">
-				<button class="icon-btn" title="Sidebar">
+				<button class="icon-btn" title="Hide the sidebar" aria-label="Hide the sidebar" onClick={() => props.onCollapse()}>
 					<Icon name="panel" />
 				</button>
 				<span class="brand-text">gentle shell</span>
@@ -82,8 +83,11 @@ export function Sidebar(props: {
 					class="action"
 					classList={{ on: searching() }}
 					onClick={() => {
-						setSearching((current) => !current);
-						if (searching()) setQuery("");
+						// Read the state it is going to, not the one it was: clearing "after" the flip cleared
+						// the query on opening and left the list filtered after closing.
+						const opening = !searching();
+						setSearching(opening);
+						if (!opening) setQuery("");
 					}}
 				>
 					<Icon name="search" />

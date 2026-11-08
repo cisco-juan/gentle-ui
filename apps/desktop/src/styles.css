@@ -1233,3 +1233,27 @@ main {
 	color: var(--warn);
 	opacity: 0.85;
 }
+
+/* ---------- focus ---------- */
+
+/* Fields drop the default outline for their own look, so keyboard focus needs a replacement. */
+.rail-search:focus-visible,
+.text-input:focus-visible,
+.popover-search:focus-visible {
+	box-shadow: 0 0 0 1.5px var(--accent);
+}
+
+button:focus-visible,
+[role="tab"]:focus-visible {
+	outline: 1.5px solid var(--accent);
+	outline-offset: 1px;
+}
+
+/* The sheet takes focus so Escape closes it; a ring around the whole sheet would only be noise. */
+.sheet:focus {
+	outline: none;
+}
+
+.suggestions li.active {
+	background: var(--surface-3);
+}

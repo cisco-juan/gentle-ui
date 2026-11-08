@@ -1,6 +1,7 @@
 import { For, Show, createMemo, createSignal, onCleanup, onMount } from "solid-js";
 import { AttachmentStrip } from "./AttachmentStrip";
 import { describeCommand } from "../lib/commands";
+import { cycle } from "../lib/menu";
 import { Icon } from "./Icon";
 import type { Attachment } from "../lib/attachments";
 import { liveChat } from "../state/chat";
@@ -31,6 +32,8 @@ export function Composer(props: {
 	const [menu, setMenu] = createSignal<Menu>(null);
 	const [query, setQuery] = createSignal("");
 	const [dragging, setDragging] = createSignal(false);
+	// The slash suggestion the arrow keys are on; -1 until one is chosen, so Enter still sends the line.
+	const [picked, setPicked] = createSignal(-1);
 	const [copied, setCopied] = createSignal<string | null>(null);
 	let area: HTMLTextAreaElement | undefined;
 
@@ -75,7 +78,21 @@ export function Composer(props: {
 		document.addEventListener("gentle:submit", onSubmit);
 		// Typing is the main activity here, so the field takes focus instead of being clicked first.
 		area?.focus();
-		onCleanup(() => document.removeEventListener("gentle:submit", onSubmit));
+		// Escape from outside the textarea (a chip, a popover row) asks the composer to close its own
+		// menu first; cancelling the event tells the shell not to read the same key as "interrupt".
+		const onDismiss = (event: Event): void => {
+			if (menu() === null) return;
+			event.preventDefault();
+			setMenu(null);
+		};
+		const onFocusRequest = (): void => area?.focus();
+		document.addEventListener("gentle:dismiss", onDismiss);
+		document.addEventListener("gentle:focus-composer", onFocusRequest);
+		onCleanup(() => {
+			document.removeEventListener("gentle:submit", onSubmit);
+			document.removeEventListener("gentle:dismiss", onDismiss);
+			document.removeEventListener("gentle:focus-composer", onFocusRequest);
+		});
 	});
 
 	function submit(): void {
@@ -200,11 +217,13 @@ export function Composer(props: {
 			<Show when={suggestions().length > 0}>
 				<ul class="suggestions">
 					<For each={suggestions()}>
-						{(command) => (
+						{(command, index) => (
 							<li
+								classList={{ active: index() === picked() }}
 								onMouseDown={(event) => {
 									event.preventDefault();
 									setText(`/${command.name} `);
+									setPicked(-1);
 								}}
 							>
 								<span class="command">/{command.name}</span>
@@ -230,9 +249,30 @@ export function Composer(props: {
 				value={text()}
 				placeholder={props.running() ? "agent is working — Esc to interrupt" : "Ask for something…  / for commands  ·  drop or paste a file"}
 				rows={3}
-				onInput={(event) => setText(event.currentTarget.value)}
+				onInput={(event) => {
+					setText(event.currentTarget.value);
+					setPicked(-1);
+				}}
 				onPaste={onPaste}
 				onKeyDown={(event) => {
+					const shown = suggestions();
+					if (shown.length > 0 && !event.isComposing) {
+						if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+							event.preventDefault();
+							setPicked(cycle(picked(), event.key === "ArrowDown" ? 1 : -1, shown.length));
+							return;
+						}
+						// Tab completes the chosen row (the first when none is); Enter does so only once an arrow
+						// chose one, so typing a whole command and pressing Enter still sends it.
+						const completes = (event.key === "Tab" && !event.shiftKey) || (event.key === "Enter" && !event.shiftKey && picked() >= 0);
+						const row = shown[picked() >= 0 ? picked() : 0];
+						if (completes && row !== undefined) {
+							event.preventDefault();
+							setText(`/${row.name} `);
+							setPicked(-1);
+							return;
+						}
+					}
 					if (event.key === "Escape") {
 						event.preventDefault();
 						if (menu() !== null) setMenu(null);
@@ -260,6 +300,13 @@ export function Composer(props: {
 									placeholder="Filter models…"
 									value={query()}
 									onInput={(event) => setQuery(event.currentTarget.value)}
+									onKeyDown={(event) => {
+										// The global keymap skips editable fields, so a field inside a popover closes it itself.
+										if (event.key !== "Escape") return;
+										event.preventDefault();
+										setMenu(null);
+										area?.focus();
+									}}
 								/>
 								<ul>
 									<For each={filteredModels()}>
