@@ -14,6 +14,7 @@ import type {
 	SettingsView,
 } from "@gentle-shell/protocol";
 import { GentlePiLibraryError, gentleHomes, requireFunctions, type GentleOptions } from "./gentle-pi-library.ts";
+import { redactedArgument, redactedUrl, secretNames } from "./redaction.ts";
 
 /**
  * What the agent the bridge launches is configured with, read from its own files.
@@ -472,45 +473,6 @@ function serverOf(entry: PiMcpEntry): SettingsMcpServer {
 		environment: secretNames(config.env),
 		oauth: config.oauth !== undefined || config.auth !== undefined,
 	};
-}
-
-/** A name with no value: the panel may show that a header or a variable exists, never what it holds. */
-function secretNames(record: Readonly<Record<string, string>> | undefined): SettingsSecretName[] {
-	if (record === undefined) return [];
-	return Object.keys(record)
-		.sort((left, right) => left.localeCompare(right))
-		.map((name) => ({ name, value: "<redacted>" as const }));
-}
-
-/**
- * Scheme, host and path only.
- *
- * A URL is the one field where a credential needs no name to live: `?token=…` and `user:pass@host` both
- * work, so both are cut out along with the fragment. An unparsable URL is not repeated either — it
- * could hold anything.
- */
-function redactedUrl(raw: string): string {
-	let url: URL;
-	try {
-		url = new URL(raw);
-	} catch {
-		return "<redacted>";
-	}
-	url.username = "";
-	url.password = "";
-	url.search = "";
-	url.hash = "";
-	return url.toString();
-}
-
-/** `--name=value` is redacted when the name reads like a credential; a bare token cannot be told apart. */
-const SECRET_ARGUMENT_NAME = /(key|token|secret|password|passwd|credential|auth)/i;
-const PAIRED_ARGUMENT = /^(-{0,2}[A-Za-z0-9_-]+)=(.+)$/;
-
-function redactedArgument(argument: string): string {
-	const name = PAIRED_ARGUMENT.exec(argument)?.[1];
-	if (name === undefined || !SECRET_ARGUMENT_NAME.test(name)) return argument;
-	return `${name}=<redacted>`;
 }
 
 // ---- small helpers ----
