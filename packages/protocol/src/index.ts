@@ -461,9 +461,10 @@ export interface PermissionsView {
  * library that owns its format; one that cannot be read is `unavailable` with a reason and a
  * message, never an empty list standing in for it.
  *
- * The view is read-only, so nothing here is a plan, a digest or a write. MCP servers are the one part
- * that carries credentials: their header and environment values, their OAuth secrets and the
- * credentials and query of a URL are never sent, and a secret renders as `<redacted>`.
+ * This view itself never writes: the keys it reports are the ones `SettingsKeysView` may set, and that
+ * write is always a plan and a digest. MCP servers are the one part of the configuration that carries
+ * credentials: their header and environment values, their OAuth secrets and the credentials and query
+ * of a URL are never sent, and a secret renders as `<redacted>`.
  */
 export type SettingsState = "ok" | "unavailable";
 
@@ -476,6 +477,9 @@ export interface SettingsKeyValue {
 	/** A key that is not set, or holds something this view does not show, is null. */
 	readonly value: string | number | boolean | null;
 }
+
+/** One writable key of `settings.json`: the three names `SettingsKeysView` may set. */
+export type SettingsWritableKey = "defaultProvider" | "defaultModel" | "defaultThinkingLevel";
 
 /** One entry of `settings.json`'s `packages`, whichever of the two forms it was written in. */
 export interface SettingsPackage {
@@ -700,6 +704,46 @@ export interface McpView {
 	readonly backup: string | null;
 }
 
+/**
+ * One of the bounded keys of the agent's `settings.json`, as the sheet edits it.
+ *
+ * Not a JSON editor: the writable set is exactly what the read view reports — `defaultProvider`,
+ * `defaultModel` and `defaultThinkingLevel` — and every value is checked before a plan exists, so an
+ * unknown key or a value Pi would not accept is refused with a reason instead of being written.
+ *
+ * The same two steps as `packages` and `mcp`: `preview` returns a plan and its digest, `apply` sends
+ * that digest back. This family and the packages family write the same file, so they share one write
+ * foundation: one backup mechanism, one atomic `0600` write, and one place a plan is spent.
+ */
+export type SettingsKeysState = "ok" | "refused" | "unavailable";
+
+/** What a plan changes: one key as the file has it and as it would have it. */
+export interface SettingsKeyChange {
+	readonly key: string;
+	/** The value on disk, or null when the key is unset. */
+	readonly before: string | null;
+	readonly after: string;
+}
+
+export interface SettingsKeysView {
+	readonly state: SettingsKeysState;
+	readonly reason: ConfigFailureReason | null;
+	readonly message: string;
+	/** `<agentHome>/settings.json`, the file this family writes. */
+	readonly path: string;
+	/** False while the file does not exist yet; an apply creates it. */
+	readonly stored: boolean;
+	/** The three writable keys as the file holds them now, or as an apply left them. */
+	readonly keys: readonly SettingsKeyValue[];
+	readonly notes: readonly string[];
+	/** The confirmation: present for `preview` and `apply`, null for refused and unavailable. */
+	readonly plan: ConfigPlanView | null;
+	/** What that plan changes; null when there is no plan. */
+	readonly change: SettingsKeyChange | null;
+	/** Where the bytes this apply replaced were kept; null when nothing was written. */
+	readonly backup: string | null;
+}
+
 export type ClientMessage =
 	| ({ readonly kind: "open"; readonly id: string } & OpenThreadRequest)
 	| { readonly kind: "close"; readonly threadId: string }
@@ -744,6 +788,23 @@ export type ClientMessage =
 	| { readonly kind: "permissions"; readonly id: string; readonly action: "default"; readonly mode: string }
 	/** The agent's own configuration: homes, packages, skills, MCP servers and the keys the sheet shows. */
 	| { readonly kind: "settings"; readonly id: string; readonly action: "read" }
+	/** Plan a change to one of the writable keys: the same family, and a different writer behind it. */
+	| {
+			readonly kind: "settings";
+			readonly id: string;
+			readonly action: "preview";
+			readonly key: string;
+			readonly value: string;
+	  }
+	/** A write only happens with the digest of the plan the preview returned. */
+	| {
+			readonly kind: "settings";
+			readonly id: string;
+			readonly action: "apply";
+			readonly key: string;
+			readonly value: string;
+			readonly digest: string;
+	  }
 	/** The packages list: read it, plan a change to one source, or apply a plan the confirmation showed. */
 	| { readonly kind: "packages"; readonly id: string; readonly action: "list" }
 	| {
@@ -868,8 +929,15 @@ export type MemoryResult =
 /** One permissions answer. */
 export type PermissionsResult = { readonly action: "status" | "default"; readonly data: PermissionsView };
 
-/** One settings answer. Reading is the only thing this family does, so there is one action. */
-export type SettingsResult = { readonly action: "read"; readonly data: SettingsView };
+/**
+ * One settings answer, tagged with the action that asked for it.
+ *
+ * Reading answers the whole view; a write answers the keys view, because it is about a written file and
+ * carries a plan, a change and a backup rather than the skills and MCP servers a read reports.
+ */
+export type SettingsResult =
+	| { readonly action: "read"; readonly data: SettingsView }
+	| { readonly action: "preview" | "apply"; readonly data: SettingsKeysView };
 
 /** One packages answer, tagged with the action that asked for it. */
 export type PackagesResult = { readonly action: "list" | "preview" | "apply"; readonly data: PackagesView };

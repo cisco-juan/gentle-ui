@@ -38,6 +38,7 @@ import {
 } from "./review.ts";
 import { listSessions } from "./sessions.ts";
 import { settingsRead, type SettingsOptions } from "./settings.ts";
+import { settingsWriteApply, settingsWritePreview, type SettingsWriteOptions } from "./settings-write.ts";
 import { ThreadHost, isDialogRequest } from "./thread-host.ts";
 import { saveUpload } from "./uploads.ts";
 import { listTree, readFileIn } from "./workspace.ts";
@@ -66,6 +67,8 @@ export interface BridgeServerOptions {
 	readonly permissions?: PermissionsOptions;
 	/** The agent's own configuration files; a test points this at a scratch agent home. */
 	readonly settings?: SettingsOptions;
+	/** The keys of that same file the sheet may set, and where their backups go. */
+	readonly settingsWrite?: SettingsWriteOptions;
 	/** The agent's packages list, and where its backups go; a test points this at a scratch pair of homes. */
 	readonly packages?: PackagesOptions;
 	/** The agent's MCP servers, in the same homes and behind the same confirmation. */
@@ -195,8 +198,9 @@ export async function startBridgeServer(options: BridgeServerOptions = {}): Prom
 		}
 
 		// The agent's own configuration belongs to the same home the bridge launches Pi with, not to a
-		// thread. This family only reads; writing that home is the `packages` family below, and the
-		// writers that follow it.
+		// thread. One family on the wire, two modules behind it: `read` answers the whole view from
+		// `settings.ts`, while `preview` and `apply` edit the bounded key set in `settings-write.ts`, with
+		// the same digest-bound plan the `packages` family uses on the same file.
 		if (message.kind === "settings") {
 			try {
 				await dispatchSettings(socket, message);
@@ -469,21 +473,39 @@ export async function startBridgeServer(options: BridgeServerOptions = {}): Prom
 	}
 
 	/**
-	 * The agent's configuration, read from its own files.
+	 * The agent's configuration: a read of the whole view, and a write of one of its keys.
 	 *
-	 * There is one answer and one action: the whole view, already projected and already redacted here,
-	 * so no path, header or token crosses the wire because a client asked for a field by name.
+	 * `read` is `settings.ts`'s — one answer, already projected and already redacted here, so no path,
+	 * header or token crosses the wire because a client asked for a field by name. `preview` and `apply`
+	 * are `settings-write.ts`'s: the writable keys, the value rules and the refusal messages are decided
+	 * there, on this side of the wire, and a write needs the digest of the plan the preview returned.
 	 */
 	async function dispatchSettings(
 		socket: WebSocket,
 		message: Extract<ClientMessage, { kind: "settings" }>,
 	): Promise<void> {
 		const settingsOptions = options.settings ?? {};
+		const writeOptions = options.settingsWrite ?? {};
 		const reply = (answer: SettingsResult): void => send(socket, { kind: "settings", id: message.id, ...answer });
 
 		switch (message.action) {
 			case "read":
 				return reply({ action: "read", data: await settingsRead(workspace, settingsOptions) });
+			case "preview":
+				return reply({
+					action: "preview",
+					data: await settingsWritePreview(workspace, { key: message.key, value: message.value }, writeOptions),
+				});
+			case "apply":
+				return reply({
+					action: "apply",
+					data: await settingsWriteApply(
+						workspace,
+						{ key: message.key, value: message.value },
+						message.digest,
+						writeOptions,
+					),
+				});
 			default:
 				throw new Error(`unsupported settings action: ${String((message as { action?: unknown }).action)}`);
 		}
