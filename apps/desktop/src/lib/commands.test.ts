@@ -72,7 +72,7 @@ test("a command the shell already classifies is not flagged", () => {
 });
 
 test("text that only starts with a slash is forwarded, not corrected", () => {
-	assert.equal(unknownCommandNotice("/home/cisco/notes.txt please read it", KNOWN), null);
+	assert.equal(unknownCommandNotice("/home/dev/notes.txt please read it", KNOWN), null);
 	assert.equal(unknownCommandNotice("/zzzzzz", KNOWN), null);
 	assert.equal(unknownCommandNotice("/ng", KNOWN), null, "too short to be a typo of anything");
 });

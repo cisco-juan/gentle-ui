@@ -5,10 +5,12 @@ pinned npm dependencies (`@earendil-works/pi-coding-agent`, `gentle-pi`), never 
 releases flow in as version bumps. The UI is a Tauri v2 shell (system webview) around a Vite frontend,
 with a Node bridge that drives the `pi` agent process.
 
-Status: every task is done except T9 phase two and T10 (packaging). Bridge 143 and desktop 160 tests green;
-native assess of `e6eeb76..HEAD` (31 paths, 3609 lines) reads medium and under budget, so no review is due. Bridge speaks to
-`pi --mode rpc` over a tokenised loopback WebSocket and re-answers extension dialogs; 116 bridge and 125
-desktop tests green. See `docs/architecture.md`.
+Status: every task is done except T9 phase two and T10 (packaging). Bridge speaks to `pi --mode rpc` over a
+tokenised loopback WebSocket and re-answers extension dialogs; 216 bridge and 163 desktop tests green, and native
+assess of `e6eeb76..HEAD` reads medium and under budget, so no review is due. See `docs/architecture.md`.
+
+Note: machine-local paths (screenshots, session files) in this document were redacted with
+`<screenshot: ...>` for publication; the words around them are the user's own.
 
 ## Specs
 
@@ -35,7 +37,7 @@ S6. Windows, Linux and macOS are all first-class targets.
 Quote: "para confirmar, con estas herramientas sigue siendo compatible con windows, linux y mac?"
 
 S7. Visual reference is the layout captured at
-`/home/cisco/Pictures/Screenshots/Screenshot_20261108_085213.png` (three zones: sidebar, chat, right
+`<screenshot: reference layout>` (three zones: sidebar, chat, right
 panel). The screenshot is stock Gentle Shell; the redesign is about distribution and skin, not a new app
 model.
 Note: the user described the reference as "herdrapp"; the image itself is Gentle Shell. Treat the layout,
@@ -191,7 +193,7 @@ T27 [x] Chat history loads progressively with the scroll instead of arriving who
 
 L1. "Estmos buscando crear un UI para gentle-shell https://github.com/Gentleman-Programming/gentle-shell,
 estoy pensando en hacer un fork del proyecto y crear una interface inspirada en este tema que tengo de
-herdrapp /home/cisco/Pictures/Screenshots/Screenshot_20261108_085213.png, buscamos que tenga todas las
+herdrapp <screenshot: reference layout>, buscamos que tenga todas las
 funcionalidades que tiene gentle shell, que se pueda actualizar con los cambios a futuro que puedan ir
 surgiendo. debemos distribuir las funcionalides para que sean facil de entender, por ejemplo en este tema
 podemos seleccionar los agentes aqui en el chat, ahi podriamos mejor seleccionar los perfiles, y ver como
@@ -261,7 +263,7 @@ L8. 2026-11-08. The user asked for an audit and a plan, then approved it. Reques
 plan para mejorar la experiencia y/o arreglar cualquier bug que encuentres.
 
 Puntos que yo he encontrado:
-Sibar de la derecha tiene un tamano max y se rompe cuando crece: file:///home/cisco/Pictures/Screenshots/Screenshot_20261108_125005.png
+Sibar de la derecha tiene un tamano max y se rompe cuando crece: <screenshot: inspector overflow>
 
 cuando intentamos usar un comando como el /gentle:profile da error o se queda congelado"
 Baseline before any change: typecheck clean, 43 desktop and 83 bridge tests green; the bugs were runtime and UX
