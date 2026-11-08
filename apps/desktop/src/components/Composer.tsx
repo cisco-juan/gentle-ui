@@ -1,5 +1,8 @@
 import { For, Show, createMemo, createSignal, onCleanup, onMount } from "solid-js";
+import { AttachmentStrip } from "./AttachmentStrip";
 import { Icon } from "./Icon";
+import type { Attachment } from "../lib/attachments";
+import { liveChat } from "../state/chat";
 
 type Menu = "model" | "profile" | "permissions" | null;
 
@@ -10,7 +13,7 @@ type Menu = "model" | "profile" | "permissions" | null;
  * permission mode — because a modal for a setting you change mid-thought breaks the thread.
  */
 export function Composer(props: {
-	onSend: (text: string) => void;
+	onSend: (text: string, attachments?: readonly Attachment[]) => void;
 	onInterrupt: () => void;
 	running: () => boolean;
 	model: () => string;
@@ -26,6 +29,16 @@ export function Composer(props: {
 	const [text, setText] = createSignal("");
 	const [menu, setMenu] = createSignal<Menu>(null);
 	const [query, setQuery] = createSignal("");
+	const [dragging, setDragging] = createSignal(false);
+	const [copied, setCopied] = createSignal<string | null>(null);
+	let area: HTMLTextAreaElement | undefined;
+
+	// Attachments are chat state, not composer state: the app shell wires only `onSend(text)`, so the
+	// controller the shell created owns the list and `send` drains it.
+	const chat = () => liveChat();
+	const attachments = () => chat()?.attachments() ?? [];
+	// A file has no path until the bridge answers; sending early would leave the agent nothing to read.
+	const uploading = () => attachments().some((entry) => entry.status === "uploading");
 
 	const suggestions = createMemo(() => {
 		const value = text();
@@ -64,9 +77,94 @@ export function Composer(props: {
 
 	function submit(): void {
 		const message = text().trim();
-		if (message.length === 0) return;
+		const pending = attachments();
+		if (uploading()) return;
+		if (message.length === 0 && pending.length === 0) return;
 		setText("");
-		props.onSend(message);
+		props.onSend(message, pending);
+	}
+
+	/** Attach the files of a drop or a paste; the controller classifies, reads and uploads them. */
+	function attach(files: readonly File[]): void {
+		const controller = chat();
+		if (controller === null) return;
+		void controller.attachFiles(files);
+	}
+
+	/** True when the drag carries files, as opposed to text the textarea should receive itself. */
+	function carriesFiles(event: DragEvent): boolean {
+		const transfer = event.dataTransfer;
+		if (transfer === null) return false;
+		if (transfer.items.length > 0) return Array.from(transfer.items).some((item) => item.kind === "file");
+		return Array.from(transfer.types).includes("Files");
+	}
+
+	function onDragOver(event: DragEvent): void {
+		// A text drag keeps its normal meaning and never highlights the composer.
+		if (!carriesFiles(event)) {
+			setDragging(false);
+			return;
+		}
+		event.preventDefault();
+		if (event.dataTransfer !== null) event.dataTransfer.dropEffect = "copy";
+		setDragging(true);
+	}
+
+	function onDragLeave(event: DragEvent): void {
+		const next = event.relatedTarget;
+		const current = event.currentTarget as unknown as Node | null;
+		// Moving between the textarea, the chips and the strip stays inside the composer.
+		if (next instanceof Node && current !== null && current.contains(next)) return;
+		setDragging(false);
+	}
+
+	function onDrop(event: DragEvent): void {
+		const files = Array.from(event.dataTransfer?.files ?? []);
+		setDragging(false);
+		if (files.length > 0) {
+			event.preventDefault();
+			attach(files);
+			return;
+		}
+
+		// Dropped text is still text: insert it at the caret instead of losing it to an empty drop handler.
+		const dropped = event.dataTransfer?.getData("text/plain") ?? "";
+		if (dropped.length === 0) return;
+		event.preventDefault();
+		insert(dropped);
+	}
+
+	function onPaste(event: ClipboardEvent): void {
+		const data = event.clipboardData;
+		if (data === null) return;
+		// Copied text keeps its normal behaviour; a clipboard image arrives as a file and becomes an attachment.
+		if (data.getData("text/plain").length > 0) return;
+		const files = Array.from(data.files);
+		if (files.length === 0) return;
+		event.preventDefault();
+		attach(files);
+	}
+
+	function insert(value: string): void {
+		const current = text();
+		const at = area?.selectionStart ?? current.length;
+		setText(`${current.slice(0, at)}${value}${current.slice(at)}`);
+		queueMicrotask(() => {
+			if (area === undefined) return;
+			area.focus();
+			area.selectionStart = at + value.length;
+			area.selectionEnd = at + value.length;
+		});
+	}
+
+	async function copyPath(path: string): Promise<void> {
+		try {
+			await navigator.clipboard.writeText(path);
+			setCopied(path);
+			window.setTimeout(() => setCopied((current) => (current === path ? null : current)), 1400);
+		} catch {
+			// A webview without clipboard permission cannot copy; the path is still readable in the tooltip.
+		}
 	}
 
 	function toggleMenu(next: Exclude<Menu, null>): void {
@@ -76,7 +174,16 @@ export function Composer(props: {
 	}
 
 	return (
-		<div class="composer">
+		<div
+			class="composer"
+			classList={{ dragging: dragging() }}
+			onDragOver={onDragOver}
+			onDragLeave={onDragLeave}
+			onDrop={onDrop}
+		>
+			<Show when={dragging()}>
+				<div class="composer-drop">drop to attach</div>
+			</Show>
 			<Show when={menu() !== null}>
 				<div class="menu-backdrop" onClick={() => setMenu(null)} />
 			</Show>
@@ -99,11 +206,20 @@ export function Composer(props: {
 				</ul>
 			</Show>
 
+			<AttachmentStrip
+				entries={attachments()}
+				copied={copied()}
+				onRemove={(id) => chat()?.removeAttachment(id)}
+				onCopyPath={(path) => void copyPath(path)}
+			/>
+
 			<textarea
+				ref={area}
 				value={text()}
-				placeholder={props.running() ? "agent is working — Esc to interrupt" : "Ask for something…  / for commands"}
+				placeholder={props.running() ? "agent is working — Esc to interrupt" : "Ask for something…  / for commands  ·  drop or paste a file"}
 				rows={3}
 				onInput={(event) => setText(event.currentTarget.value)}
+				onPaste={onPaste}
 				onKeyDown={(event) => {
 					if (event.key === "Escape") {
 						event.preventDefault();
@@ -215,7 +331,11 @@ export function Composer(props: {
 							Stop
 						</button>
 					</Show>
-					<button class="send" onClick={submit} disabled={text().trim().length === 0}>
+					<button
+						class="send"
+						onClick={submit}
+						disabled={uploading() || (text().trim().length === 0 && attachments().length === 0)}
+					>
 						Send
 					</button>
 				</div>

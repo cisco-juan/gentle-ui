@@ -89,6 +89,13 @@ export interface SlashCommand {
 	readonly source?: string;
 }
 
+/** One composer attachment the bridge accepted: an absolute path the agent can read. */
+export interface UploadedFile {
+	/** Absolute path inside the agent home's uploads directory. */
+	readonly path: string;
+	readonly bytes: number;
+}
+
 /** One entry of a workspace directory listing, paths relative to the workspace root. */
 export interface WorkspaceTreeEntry {
 	readonly name: string;
@@ -139,6 +146,8 @@ export type ClientMessage =
 			readonly response: ExtensionUiResponse;
 	  }
 	| { readonly kind: "sessions"; readonly id: string }
+	/** A dropped or pasted file, base64 encoded, for the bridge to write into the agent home. */
+	| { readonly kind: "upload"; readonly id: string; readonly name: string; readonly dataBase64: string }
 	| { readonly kind: "git"; readonly id: string; readonly action: "status" }
 	| { readonly kind: "git"; readonly id: string; readonly action: "diff"; readonly path: string }
 	| { readonly kind: "fs"; readonly id: string; readonly action: "tree"; readonly path?: string }
@@ -165,6 +174,8 @@ export type ServerMessage =
 	| { readonly kind: "log"; readonly threadId: string; readonly line: string }
 	| { readonly kind: "exited"; readonly threadId: string; readonly code: number | null }
 	| { readonly kind: "sessions"; readonly id: string; readonly items: readonly SessionSummary[] }
+	/** Answer to `{kind:"upload"}`: where the file landed and how many bytes were written. */
+	| { readonly kind: "upload"; readonly id: string; readonly data: UploadedFile }
 	/** Answer to `{kind:"git", action:"status"}`. */
 	| { readonly kind: "git"; readonly id: string; readonly action: "status"; readonly data: GitStatus }
 	/** Answer to `{kind:"git", action:"diff"}`: unified diff text, or a note for an untracked directory. */

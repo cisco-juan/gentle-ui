@@ -1,6 +1,18 @@
 import { batch, createSignal, type Accessor } from "solid-js";
-import type { ExtensionUiRequest, ExtensionUiResponse, ServerMessage, SessionSummary } from "@gentle-shell/protocol";
+import type { ExtensionUiRequest, ExtensionUiResponse, ServerMessage, SessionSummary, UploadedFile } from "@gentle-shell/protocol";
 import { BridgeClient } from "../lib/bridge";
+import {
+	IMAGE_ONLY_PROMPT,
+	buildImages,
+	composePrompt,
+	describeAttachment,
+	readAsBase64,
+	sanitizeName,
+	uploadedPaths,
+	type Attachment,
+	type FileLike,
+	type PromptImage,
+} from "../lib/attachments";
 import { textOf, type AssistantMessage, type AssistantStreamEvent, type ContentBlock, type PiEnvelope, type ToolResultPayload } from "../lib/records";
 
 export type ChatItem =
@@ -37,10 +49,16 @@ export interface ChatController {
 	/** Live socket, so panels outside the transcript can ask their own questions. */
 	readonly bridge: Accessor<BridgeClient | null>;
 	readonly currentThread: Accessor<string | null>;
+	/** Files dropped or pasted on the composer that have not been sent yet. */
+	readonly attachments: Accessor<readonly Attachment[]>;
+	/** Read, classify and upload dropped files. Failures land in the transcript, never as a silent drop. */
+	attachFiles(files: readonly FileLike[]): Promise<void>;
+	removeAttachment(id: string): void;
 	/** Send any allow-listed Pi command through the open thread. */
 	invoke<T>(command: string, params?: Record<string, unknown>): Promise<T>;
 	connect(): Promise<void>;
-	send(text: string): Promise<void>;
+	/** `attachments` defaults to the composer's pending list, which is drained either way. */
+	send(text: string, attachments?: readonly Attachment[]): Promise<void>;
 	interrupt(): Promise<void>;
 	newThread(): Promise<void>;
 	switchThread(path: string): Promise<void>;
@@ -50,6 +68,19 @@ export interface ChatController {
 	switchModel(provider: string, modelId: string): Promise<void>;
 	runCommand(name: string): Promise<void>;
 	setPermissionMode(mode: string): Promise<void>;
+}
+
+/**
+ * The controller the app created, for the composer.
+ *
+ * `App.tsx` owns the wiring and passes the composer only `onSend(text)`, so the composer cannot reach
+ * the controller through props. Attachments live in this controller (they are chat state: they survive a
+ * send, a failure and a redraw), and the composer reads them from here.
+ */
+let live: ChatController | null = null;
+
+export function liveChat(): ChatController | null {
+	return live;
 }
 
 /** Translate Pi's record stream into renderable chat items. */
@@ -67,10 +98,12 @@ export function createChatController(options: { url: string; cwd: string }): Cha
 	const [permissionMode, setPermissionModeSignal] = createSignal("normal");
 	const [threads, setThreads] = createSignal<readonly SessionSummary[]>([]);
 	const [activePath, setActivePath] = createSignal<string | null>(null);
+	const [attachments, setAttachments] = createSignal<readonly Attachment[]>([]);
 
 	let client: BridgeClient | null = null;
 	let threadId: string | null = null;
 	let counter = 0;
+	let attachmentCounter = 0;
 
 	const nextId = (): string => `item-${++counter}`;
 
@@ -253,22 +286,111 @@ export function createChatController(options: { url: string; cwd: string }): Cha
 		}
 	}
 
-	async function send(text: string): Promise<void> {
-		const message = text.trim();
-		if (message.length === 0 || !client || !threadId) return;
+	/**
+	 * Send one prompt: the typed text plus whatever the composer attached.
+	 *
+	 * `App.tsx` wires the composer with a one-argument `onSend`, so the composer's attachments arrive
+	 * through this controller's own list and are drained here. A caller that passes `attachments`
+	 * explicitly wins, and the list is cleared either way; the palette and the chips call `send` with one
+	 * argument and stage nothing, so they keep behaving exactly as before.
+	 */
+	async function send(text: string, explicit?: readonly Attachment[]): Promise<void> {
+		const staged = takeAttachments();
+		const attached = explicit ?? staged;
+
+		const pathless = attached.find((entry) => entry.kind === "file" && entry.path === undefined);
+		if (pathless !== undefined) {
+			restoreAttachments(staged);
+			append({ kind: "notice", id: nextId(), text: `still uploading ${pathless.name}`, tone: "warning" });
+			return;
+		}
+
+		const images = buildImages(attached);
+		const message = composePrompt(text, uploadedPaths(attached)) || (images.length > 0 ? IMAGE_ONLY_PROMPT : "");
+		if (message.length === 0) return;
+
+		if (!client || !threadId) {
+			restoreAttachments(staged);
+			if (attached.length > 0) {
+				append({ kind: "notice", id: nextId(), text: "the agent is not connected; the attachment was kept", tone: "error" });
+			}
+			return;
+		}
+
+		await prompt(message, images);
+	}
+
+	/** The one way a prompt reaches Pi, so a command and a typed message behave the same. */
+	async function prompt(message: string, images: readonly PromptImage[] = []): Promise<void> {
+		if (!client || !threadId || message.length === 0) return;
 		append({ kind: "user", id: nextId(), text: message });
 		setRunning(true);
 		try {
-			await client.command(threadId, "prompt", { message });
+			await client.command(threadId, "prompt", images.length > 0 ? { message, images } : { message });
 		} catch (error) {
 			setRunning(false);
+			append({ kind: "notice", id: nextId(), text: errorText(error), tone: "error" });
+		}
+	}
+
+	function takeAttachments(): readonly Attachment[] {
+		const current = attachments();
+		if (current.length > 0) setAttachments([]);
+		return current;
+	}
+
+	function restoreAttachments(entries: readonly Attachment[]): void {
+		if (entries.length > 0) setAttachments((current) => [...entries, ...current]);
+	}
+
+	async function attachFiles(files: readonly FileLike[]): Promise<void> {
+		if (files.length === 0) return;
+		if (!client) {
 			append({
 				kind: "notice",
 				id: nextId(),
-				text: error instanceof Error ? error.message : String(error),
+				text: "the agent is not connected; drop the file again once it is",
 				tone: "error",
 			});
+			return;
 		}
+
+		for (const file of files) {
+			let dataBase64: string;
+			try {
+				// The bridge's own rule, checked before the round trip: a name it would refuse never uploads.
+				sanitizeName(file.name);
+				dataBase64 = await readAsBase64(file);
+			} catch (error) {
+				append({ kind: "notice", id: nextId(), text: `cannot attach ${file.name}: ${errorText(error)}`, tone: "error" });
+				continue;
+			}
+
+			const id = `attachment-${++attachmentCounter}`;
+			const entry = describeAttachment(id, file, dataBase64);
+			setAttachments((current) => [...current, entry]);
+			// An image travels inside the prompt, so it needs no path on disk.
+			if (entry.kind === "image") continue;
+
+			try {
+				const saved = await uploadFile(options.url, file.name, dataBase64);
+				setAttachments((current) =>
+					current.map((item) => (item.id === id ? { ...item, status: "ready", path: saved.path } : item)),
+				);
+			} catch (error) {
+				setAttachments((current) => current.filter((item) => item.id !== id));
+				append({
+					kind: "notice",
+					id: nextId(),
+					text: `could not attach ${file.name}: ${errorText(error)}`,
+					tone: "error",
+				});
+			}
+		}
+	}
+
+	function removeAttachment(id: string): void {
+		setAttachments((current) => current.filter((entry) => entry.id !== id));
 	}
 
 	async function interrupt(): Promise<void> {
@@ -421,7 +543,8 @@ export function createChatController(options: { url: string; cwd: string }): Cha
 
 	/** Slash commands are plain prompts to Pi, so the UI needs no private control channel for them. */
 	async function runCommand(name: string): Promise<void> {
-		await send(`/${name}`);
+		// Deliberately not `send`: a palette command must not pick up files staged in the composer.
+		await prompt(`/${name}`);
 	}
 
 	async function setPermissionMode(mode: string): Promise<void> {
@@ -435,7 +558,7 @@ export function createChatController(options: { url: string; cwd: string }): Cha
 		return client.command<T>(threadId, command, params);
 	}
 
-	return {
+	const controller: ChatController = {
 		items,
 		draft,
 		running,
@@ -451,6 +574,9 @@ export function createChatController(options: { url: string; cwd: string }): Cha
 		activePath,
 		bridge: () => client,
 		currentThread: () => threadId,
+		attachments,
+		attachFiles,
+		removeAttachment,
 		invoke,
 		connect,
 		send,
@@ -464,6 +590,57 @@ export function createChatController(options: { url: string; cwd: string }): Cha
 		runCommand,
 		setPermissionMode,
 	};
+
+	live = controller;
+	return controller;
+}
+
+let uploadCounter = 0;
+
+/**
+ * Write one attachment through the bridge.
+ *
+ * An upload is a bridge request, not a Pi command, and `BridgeClient` speaks only thread commands, so
+ * the upload opens its own tokenised socket, asks once and closes. It is loopback: the cost is one
+ * handshake per file, not a round trip per chunk.
+ */
+function uploadFile(url: string, name: string, dataBase64: string): Promise<UploadedFile> {
+	return new Promise((resolve, reject) => {
+		const id = `upload-${++uploadCounter}`;
+		let socket: WebSocket;
+		try {
+			socket = new WebSocket(url);
+		} catch (error) {
+			reject(error instanceof Error ? error : new Error(String(error)));
+			return;
+		}
+
+		let settled = false;
+		const finish = (settle: () => void): void => {
+			if (settled) return;
+			settled = true;
+			clearTimeout(timer);
+			socket.close();
+			settle();
+		};
+		const timer = setTimeout(() => finish(() => reject(new Error("the bridge did not answer the upload"))), 30_000);
+
+		socket.addEventListener("open", () => {
+			socket.send(JSON.stringify({ kind: "upload", id, name, dataBase64 }));
+		});
+		socket.addEventListener("message", (event) => {
+			let message: ServerMessage;
+			try {
+				message = JSON.parse(String(event.data)) as ServerMessage;
+			} catch {
+				return;
+			}
+			if (message.kind === "upload" && message.id === id) finish(() => resolve(message.data));
+			else if (message.kind === "error" && message.id === id) finish(() => reject(new Error(message.message)));
+		});
+		socket.addEventListener("error", () => finish(() => reject(new Error(`cannot reach the bridge at ${url}`))));
+		socket.addEventListener("close", () => finish(() => reject(new Error("the bridge closed the upload connection"))));
+	});
 }
 
 interface HistoryMessage {

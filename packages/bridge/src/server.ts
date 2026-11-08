@@ -4,8 +4,10 @@ import { WebSocketServer, type WebSocket } from "ws";
 import type { ClientMessage, PiCommand, ServerMessage, SessionSummary } from "@gentle-shell/protocol";
 import { resolveCommand } from "./commands.ts";
 import { gitDiff, gitStatus } from "./git.ts";
+import { resolvePiEnvironment } from "./pi-environment.ts";
 import { listSessions } from "./sessions.ts";
 import { ThreadHost, isDialogRequest } from "./thread-host.ts";
+import { saveUpload } from "./uploads.ts";
 import { listTree, readFileIn } from "./workspace.ts";
 
 export interface BridgeServerOptions {
@@ -32,6 +34,7 @@ export async function startBridgeServer(options: BridgeServerOptions = {}): Prom
 	const workspace = options.workspace ?? process.cwd();
 	const hosts = new Map<string, ThreadHost>();
 	const sockets = new Set<WebSocket>();
+	let uploadsHome: string | null = null;
 
 	const httpServer = createServer((_request, response) => {
 		response.writeHead(426, { "content-type": "text/plain" });
@@ -101,6 +104,21 @@ export async function startBridgeServer(options: BridgeServerOptions = {}): Prom
 			return;
 		}
 
+		// Uploads belong to the agent home, not to a thread: the composer may attach a file before a
+		// thread exists, and the path is what the next prompt carries.
+		if (message.kind === "upload") {
+			try {
+				send(socket, {
+					kind: "upload",
+					id: message.id,
+					data: await saveUpload(agentHome(), message.name, message.dataBase64),
+				});
+			} catch (error) {
+				send(socket, { kind: "error", id: message.id, message: errorMessage(error) });
+			}
+			return;
+		}
+
 		if (message.kind === "open") {
 			const host = new ThreadHost(message, {
 				...(options.executable === undefined ? {} : { executable: options.executable }),
@@ -153,6 +171,29 @@ export async function startBridgeServer(options: BridgeServerOptions = {}): Prom
 		} catch (error) {
 			send(socket, { kind: "result", id: message.id, threadId: host.id, command, ok: false, error: errorMessage(error) });
 		}
+	}
+
+	/**
+	 * Directory attachments are written into: the agent home the child process runs with.
+	 *
+	 * Resolved once, lazily, from the same environment the launcher builds — an `env` override in the
+	 * options wins, because that is the variable the child actually sees.
+	 */
+	function agentHome(): string {
+		if (uploadsHome !== null) return uploadsHome;
+		const configured = options.env?.["PI_CODING_AGENT_DIR"];
+		if (configured !== undefined && configured.trim().length > 0) {
+			uploadsHome = configured;
+			return uploadsHome;
+		}
+		const resolved = resolvePiEnvironment({
+			...(options.extension === undefined ? {} : { extension: options.extension }),
+		}).env["PI_CODING_AGENT_DIR"];
+		if (resolved === undefined || resolved.trim().length === 0) {
+			throw new Error("the agent home is unknown; uploads need PI_CODING_AGENT_DIR");
+		}
+		uploadsHome = resolved;
+		return uploadsHome;
 	}
 
 	async function dispatchWorkspace(
