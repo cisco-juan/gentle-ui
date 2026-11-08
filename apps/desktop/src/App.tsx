@@ -181,8 +181,8 @@ export default function App() {
 	return (
 		<div
 			class="app"
-			classList={{ "rail-closed": !layout.state().railOpen, "inspector-closed": !layout.state().inspectorOpen }}
-			style={{ "grid-template-columns": gridTemplate(layout.state()) }}
+			classList={{ "rail-closed": !layout.effective().railOpen, "inspector-closed": !layout.effective().inspectorOpen }}
+			style={{ "grid-template-columns": gridTemplate(layout.effective()) }}
 		>
 			<Sidebar
 				project={PROJECT_LABEL || "current workspace"}

@@ -1,6 +1,7 @@
-import { createEffect, createSignal, type Accessor } from "solid-js";
+import { createEffect, createSignal, onCleanup, type Accessor } from "solid-js";
 import {
 	DEFAULT_LAYOUT,
+	resolveLayout,
 	INSPECTOR_LIMITS,
 	LAYOUT_KEY,
 	RAIL_LIMITS,
@@ -12,6 +13,8 @@ import {
 
 export interface LayoutController {
 	readonly state: Accessor<Layout>;
+	/** The layout as the window width allows it, which is what the shell renders. */
+	readonly effective: Accessor<Layout>;
 	toggleRail(): void;
 	toggleInspector(): void;
 	resizeRail(width: number): void;
@@ -36,6 +39,17 @@ function restore(): Layout {
  */
 export function createLayout(): LayoutController {
 	const [state, setState] = createSignal<Layout>(restore());
+	const [viewport, setViewport] = createSignal(typeof window === "undefined" ? 0 : window.innerWidth);
+
+	if (typeof window !== "undefined") {
+		const onResize = (): void => {
+			setViewport(window.innerWidth);
+		};
+		window.addEventListener("resize", onResize);
+		onCleanup(() => window.removeEventListener("resize", onResize));
+	}
+
+	const effective = (): Layout => resolveLayout(state(), viewport());
 
 	createEffect(() => {
 		const snapshot = state();
@@ -52,6 +66,7 @@ export function createLayout(): LayoutController {
 
 	return {
 		state,
+		effective,
 		toggleRail: () => patch({ railOpen: !state().railOpen }),
 		toggleInspector: () => patch({ inspectorOpen: !state().inspectorOpen }),
 		resizeRail: (width: number) => patch({ railWidth: clampWidth(width, RAIL_LIMITS) }),
