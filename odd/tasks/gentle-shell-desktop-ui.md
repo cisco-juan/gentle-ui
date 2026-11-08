@@ -82,6 +82,21 @@ Quote: "Los datos del sidbar de la derecha deben pertenecer al proyecto que esta
 S19. Every option of the permission menu must be readable, including the selected one.
 Quote: "El componente de seleccion de permisos debe ser mas ancho, no se la opcion seleccionada"
 
+S21. The product is named Gentle UI wherever it names itself.
+Quote: "vamos a cambiarla a Gentle UI todo lo relacionado con el nombre"
+
+S22. Starting a chat shows the Gentle Shell rose, the way the terminal does.
+Quote: "La rosa de gentle shell, al iniciar un chat como lo hace le TUI"
+
+S23. The sidebar carries the branding.
+Quote: "Agregar branding en el sidebar"
+
+S24. Closing the left sidebar shrinks it to a rail of icons instead of removing it.
+Quote: "Cuado se cierre el sidebar de la izquiera que no se elimine completamente, que se encoja en una version con iconos"
+
+S25. Themes: the UI follows Gentle Shell's own theme configuration, and choosing a theme there changes this UI too.
+Quote: "Tener temas, usar las configuraciones de temas de gentleshell que afecten a nuestra version, cosa que cambie le UI con la seleccion del tema"
+
 S20. A jump-to-end control appears while the reader has scrolled away from the end of the chat.
 Quote: "Debemos tener un boton que aparezca solo cuando estemos haciendo scroll en el chat para ir al final"
 
@@ -200,6 +215,16 @@ T27 [x] Chat history loads progressively with the scroll instead of arriving who
     running app on the 1430-line thread: 3 rows before, 72 rows (3 users, 27 thinking blocks, 35 tools) after
     opening, and scrolling up brought the next 40 entries to 152 rows while the reader stayed put.
     Risk: item 3 (a new protocol family) — one reader, no unreadable path outside the session root.
+
+T33 [ ] Rename the product to Gentle UI: `productName`, bundle identifier, window title, installer and
+    artifact names, and the readme's own name. The harness stays Gentle Shell; only what names *this*
+    product changes. S21
+T34 [ ] A chat start shows the Gentle Shell rose the way the TUI does. S22
+T35 [ ] The sidebar carries the product's branding. S23
+T36 [ ] Closing the left sidebar shrinks it to an icon rail instead of removing it; the collapse is a mode,
+    not a disappearance. S24
+T37 [ ] Themes come from Gentle Shell's configuration: the UI reads the selected theme and follows it, and a
+    change of theme there changes the UI. S25
 
 ## Log
 
@@ -400,6 +425,20 @@ T28 [x] A thread opens showing the oldest row of its first page for a moment bef
 Observation while closing T20: `profiles.json` holds a profile literally named `NaN`, next to `current`,
 `Claude-Grok`, `OnlyGrok` and `grok-opencode`. The UI renders it faithfully, so it is data, not a display bug — most
 likely created by an earlier session from a numeric parse. Left untouched: deleting a profile is the user's call.
+
+L17. 2026-11-08. The user accepted publishing and asked for the product name to become Gentle UI
+("vamos a cambiarla a Gentle UI todo lo relacionado con el nombre"), but wants styles first:
+"Antes de publicar me gustaria agreagr algunas cosas de estilos. 1. La rosa de gentle shell, al iniciar un chat
+como lo hace le TUI 2. Agregar branding en el sidebar 3. Cuado se cierre el sidebar de la izquiera que no se
+elimine completamente, que se encoja en una version con iconos" and "Tener temas, usar las configuraciones de
+temas de gentleshell que afecten a nuestra version, cosa que cambie le UI con la seleccion del tema".
+So the draft `v0.1.0` stays a draft: rename and styles land first, then the release is published.
+Evidence gathered before planning: the `gentle-shell` binary is a Node launcher
+(`gentle-pi/bin/gentle-shell.mjs`), it enforces a default `theme` field in Pi's settings file
+(`DEFAULT_THEME_NAME` in `scripts/install-tui-mode-setting.mjs`), and `animations.json` in the config home
+carries `{"schema":"gentle-pi.animations/v1","policy":"quality"}`. The rose itself and the theme token catalog
+are being located before anything is drawn: an invented rose would be the wrong brand, and an invented theme
+mapping would be a skin that does not match the terminal.
 
 L16. 2026-11-08. Publishing and packaging. The repository is public at github.com/cisco-juan/gentle-ui,
 default branch `main`, with `develop` pushed alongside it, MIT license, and README plus docs mirrored in
