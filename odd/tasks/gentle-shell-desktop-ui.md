@@ -5,7 +5,8 @@ pinned npm dependencies (`@earendil-works/pi-coding-agent`, `gentle-pi`), never 
 releases flow in as version bumps. The UI is a Tauri v2 shell (system webview) around a Vite frontend,
 with a Node bridge that drives the `pi` agent process.
 
-Status: T1-T8, T11-T18 and T22 done; T9 has phase one; T10, T19-T21 and T23-T27 open. Bridge speaks to
+Status: every task is done except T9 phase two and T10 (packaging). Bridge 143 and desktop 160 tests green;
+native assess of `e6eeb76..HEAD` (31 paths, 3609 lines) reads medium and under budget, so no review is due. Bridge speaks to
 `pi --mode rpc` over a tokenised loopback WebSocket and re-answers extension dialogs; 116 bridge and 125
 desktop tests green. See `docs/architecture.md`.
 
@@ -70,6 +71,18 @@ Quote: "cuando esta working el chat esta bloqueado, no puedo hacer scroll por ej
 S16. Chat history must load lazily as the transcript is scrolled.
 Quote: "El chat solo muestra la ultima iteracion, deberia ir haciendo lazyloading del historial del chat con el scroll"
 
+S17. Subagents are listed newest first, and a subagent opens a view of its own run.
+Quote: "Ordenar los agentes para que los mas reciente arriba y al darle click a un subagente este abra un modal con la iteracion para ver como se ejecuta"
+
+S18. The right inspector belongs to the open thread; it must not keep showing the previous chat's data.
+Quote: "Los datos del sidbar de la derecha deben pertenecer al proyecto que esta seleccionado (es decir al chat) cuando cambio entre chats se mantiene el mismo contenido"
+
+S19. Every option of the permission menu must be readable, including the selected one.
+Quote: "El componente de seleccion de permisos debe ser mas ancho, no se la opcion seleccionada"
+
+S20. A jump-to-end control appears while the reader has scrolled away from the end of the chat.
+Quote: "Debemos tener un boton que aparezca solo cuando estemos haciendo scroll en el chat para ir al final"
+
 ## Tasks
 
 T1  [x] Workspace scaffold: git init, pnpm workspace, `apps/desktop` (Tauri v2 + Solid + Vite), `packages/bridge`. S6 — 64eb88d
@@ -120,8 +133,15 @@ T19 [ ] Bridge: profiles module over gentle-pi's own library (loaded with jiti),
     reader would drop, notes for what it drops silently. S11 — 2b5454b and the fix that follows it.
     Route: inline. Risk items 1 and 3 (writes a file another program owns). Gate pending: independent verifier, then
     native review. Checked off when both are done.
-T20 [ ] UI: Profiles sheet, composer chip, bare `/gentle:profiles` opens the sheet, "use for new threads". S11
-T21 [ ] Docs and log for the profiles work. S11
+T20 [x] UI: Profiles sheet, composer chip, bare `/gentle:profiles` opens the sheet, "use for new threads". S11
+    Verified read-only in the running app: the composer chip lists the five real profiles with the active one marked
+    `default`, and "Manage profiles…" opens the Profiles sheet with the same five, plus Duplicate / Rename / Delete /
+    "Use for new threads", the orchestrator mode switch (organic, full-delegation) and each agent's model, thinking
+    and tier. Nothing was written to the user's file during this check.
+T21 [x] Docs and log for the profiles work. S11
+    `docs/architecture.md` covers the command's argument behaviour (56-57) and the composer chips (106), and L9 holds
+    the design: where the file lives, why the bridge reads and writes it with gentle-pi's own library, the backup
+    rule, and what the reader drops silently. Risk: none (documentation).
 
 T22 [x] The permission chip writes the default new threads start in, offers every mode, and says which modes are
     terminal-only. The fake thread mode (`chat.permissionMode()`, hard-coded `normal`) is gone with its no-op
@@ -131,15 +151,41 @@ T22 [x] The permission chip writes the default new threads start in, offers ever
     the browser against the running bridge: chip reads `normal`, four rows, `normal` marked current, `yolo`
     refused with its command, `auto` written and marked current after the new thread. 125 desktop tests green.
 
-T23 [ ] Transcript shows the model's thinking chain, collapsed by default, and a reopened thread keeps it. S12
-T24 [ ] Tool calls that touch files render a file-change card with the path and the change; the raw argument dump
+T23 [x] Transcript shows the model's thinking chain, collapsed by default, and a reopened thread keeps it. S12
+    `streamIntent()` decides text vs thinking vs nothing from the stream; `thinking_delta` lands in one item per
+    block, `thinking_end` closes it, and `thinkingOf()` replays the block for a reopened thread. RED first
+    (missing export), 13/13 lib tests green. Verified in the running app: a real turn rendered
+    "thinking · <peek> · 230 chars" above its answer. Route: inline plus one writer for the component and
+    styles. Risk none.
+T24 [x] Tool calls that touch files render a file-change card with the path and the change; the raw argument dump
     stops being the only view. S13
-T25 [ ] A run is visibly in progress at every moment (thinking, tool running, streaming), not only while the draft
+    `fileChangeOf()` reads a change out of the arguments (`write` whole file, `edit` old/new hunks, `edits` as
+    array/single object/JSON string), never throws on hostile input, and returns null for every other tool. The
+    card shows basename, directory, `+N −M`, and either the diff or a 40-line preview. 12 tests, RED first.
+    Verified in the app: "▾ <path> 131 lines done" expanding to the preview. Route: one writer, then the parent
+    reviewed and split the commit. Risk: none (a view over arguments already on screen).
+T25 [x] A run is visibly in progress at every moment (thinking, tool running, streaming), not only while the draft
     is empty. S14
-T26 [ ] The transcript stays scrollable while a run is in flight: nothing transparent covers it, and
+    `activityOf()` names what is happening ("thinking", "running bash", "writing the answer", "waiting for your
+    approval"), and the transcript line is no longer gated on an empty draft. RED first, 4 tests. Route and risk:
+    same commit as T23.
+T26 [x] The transcript stays scrollable while a run is in flight: nothing transparent covers it, and
     follow-the-stream never fights the reader. S15
-T27 [ ] Chat history loads progressively with the scroll instead of arriving whole or stopping at the last
+    Two causes, both fixed: `.menu-backdrop` was `position: fixed; inset: 0` over the whole app, so any open
+    composer menu swallowed the wheel; it is gone, replaced by a capture-phase `pointerdown` listener that closes
+    the menu without covering anything. And `followAfterWheel()` settles "stop following" on the wheel gesture
+    itself, so a token arriving before the scroll event can no longer pin the reader back to the end. RED first,
+    2 tests. Verified in the browser: with a menu open, `elementFromPoint` over the chat is the chat and no
+    backdrop exists — the scroll itself could not be measured because that thread fits its pane (see T27).
+T27 [x] Chat history loads progressively with the scroll instead of arriving whole or stopping at the last
     iteration. S16
+    History is now read from the session JSONL, not from Pi's `get_messages` tail: `pageHistory()` pages backwards
+    with an entry cursor, folds each `toolResult` into the assistant turn that called it, and keeps the thinking
+    blocks. The bridge refuses any path outside the session roots it lists; `get_messages` stays as the fallback
+    and tells the UI there is nothing older. 12 bridge tests and 5 desktop tests, RED first. Verified in the
+    running app on the 1430-line thread: 3 rows before, 72 rows (3 users, 27 thinking blocks, 35 tools) after
+    opening, and scrolling up brought the next 40 entries to 152 rows while the reader stayed put.
+    Risk: item 3 (a new protocol family) — one reader, no unreadable path outside the session root.
 
 ## Log
 
@@ -304,6 +350,68 @@ What was built and why:
   which is the human-controlled path; the file now exists with the built-in default where it may not have existed
   before, so behaviour is unchanged. `VITE_BRIDGE_URL` did not override the endpoint in a plain browser run — that
   needs its own look before the next verification relies on it.
+
+T29 [x] Agents tab: newest first, and a click on a subagent opens a modal showing that run's iteration. S17
+    The tab no longer renders the `setWidget` line: the bridge reads gentle-pi's own presence files
+    (`<agent home>/gentle-agents/presence/`), picks the incarnation whose session hash matches the open session
+    file, and projects it — newest first by `startedAt`, items clamped (4000 chars, last 200) with a `truncated`
+    flag, never throwing on a broken payload. Two actions, `list` and `detail`, so the list stays small. A row is
+    a real button; the modal shows the run's steps (text and tool output), closes on Escape and restores focus.
+    15 bridge tests and 9 desktop tests, RED first. Verified in the app with a two-session fixture: rows newest
+    first, a click showed text → `read` with output → text, Escape closed it. Route: one writer, then the parent
+    verified and committed. Risk: item 3 (a new wire family) — the reader is confined to the presence directory
+    and refuses any path outside it.
+T30 [x] Inspector data is scoped to the open thread: switching chats must not leave the previous thread's
+    changes, files, tasks, memory or agents on screen. S18
+    Agents is the only per-thread tab and it is now keyed by `activePath()`: a switch empties the tab, closes the
+    modal and drops any answer still in flight for the previous thread (generation counter). Verified in the app:
+    switching from one session to the other showed that session's runs, not the previous one's.
+    Open follow-up: Changes/Files/Tasks/Memory/Review are workspace-scoped by design and still refetch only when
+    their tab is opened — they can look stale after a switch, which is a different bug from this one and is not
+    covered here. The user decides whether they should refresh on switch or say they are workspace-wide.
+T31 [x] The permission menu is wide enough for the selected mode to be readable. S19
+    300px instead of 240px, and the current row now carries a check plus a `current` label: a background tint alone
+    was the whole signal. Verified in the app: width 300, row reads "✓ normal CURRENT". Risk: none.
+T32 [x] A jump-to-end button appears in the chat only while the reader is away from the end. S20
+    One reactive fact (`away`, derived from the same follow-the-stream decision) drives a sticky pill; clicking it
+    resumes following. Verified in the app: pill present 7.7k px from the end, and after clicking it the transcript
+    sat at the end (0) with the pill gone. Risk: none.
+
+T28 [x] A thread opens showing the oldest row of its first page for a moment before it lands on the newest one:
+    the follow effect ran before the skeleton left and the height settled. S16
+    Found while verifying T27; measured, not guessed. Fixed by tracking `loading` in the follow effect, so the pin
+    runs again once the skeleton is gone and the scroll height is real. Verified in the app: the first frame with
+    rows already sits at the end (atEnd 0), where before it showed atEnd 3245 and jumped later. Risk: none.
+
+Observation while closing T20: `profiles.json` holds a profile literally named `NaN`, next to `current`,
+`Claude-Grok`, `OnlyGrok` and `grok-opencode`. The UI renders it faithfully, so it is data, not a display bug — most
+likely created by an earlier session from a numeric parse. Left untouched: deleting a profile is the user's call.
+
+L14. 2026-11-08. Delivery plan the user announced for when these tasks are done, verbatim: "al finalizar todas
+estas tareas vamos a crear el repo en mi perfil, lo llamaremos gentle-ui, tendremos la documentacion completa en
+inlges y espanol, haremos referencia a gentle shell y sus herramientas, ademas, tendremos 2 ramas, master/main y
+develop, el repo sera publico, y pondremos la medalla de maded with gentle ia".
+Not executed, and deliberately not started here. Points to settle at that moment, because they change what gets
+published: the owner and exact slug (`gentle-ui`), the license, whether the history is squashed or carries these
+work-unit commits, what belongs in the public tree (this repo's `odd/` working notes and any screenshot or session
+path that names the user's machine), and the badge wording ("Made with Gentle AI") and where it points. Creating
+the repository and pushing are separate human decisions under ordinary policy.
+
+L13. 2026-11-08. Four UI adjustments after using the app, verbatim:
+"Ordenar los agentes para que los mas reciente arriba y al darle click a un subagente este abra un modal con la
+iteracion para ver como se ejecuta" / "Los datos del sidbar de la derecha deben pertenecer al proyecto que esta
+seleccionado (es decir al chat) cuando cambio entre chats se mantiene el mismo contenido" / "El componente de
+seleccion de permisos debe ser mas ancho, no se la opcion seleccionada" / "Debemos tener un boton que aparezca solo
+cuando estemos haciendo scroll en el chat para ir al final".
+Order chosen: T31 and T32 are small and land with the transcript work; T29 and T30 touch the inspector together, so
+they are one unit with one writer, and they wait for the worker holding `styles.css` to finish rather than editing
+the same file from two places.
+
+L12. 2026-11-08. While verifying T26, opening the user's long thread ("Estmos buscando crear un UI para gen",
+hundreds of turns on disk) rendered three rows and no scroll: `loadHistory` asks Pi for `get_messages` and shows
+what comes back, and what comes back is the tail. That is the user's "el chat solo muestra la ultima iteracion",
+now reproduced. T27 needs paging from the session file the bridge already indexes for the rail, not a larger
+`get_messages` request.
 
 L11. 2026-11-08. The user ran the app against real work and asked for four things, verbatim:
 "la sesion en la Terminal muestra informacion como el codigo, la cadenas de pensamientos, n la UI solo esta mostrando

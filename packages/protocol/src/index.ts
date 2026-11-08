@@ -744,6 +744,95 @@ export interface SettingsKeysView {
 	readonly backup: string | null;
 }
 
+/** One tool call an assistant turn made, with the result the session file recorded for it. */
+export interface HistoryTool {
+	/** Pi's call id, so a result that arrived on a later line is attached to the call that made it. */
+	readonly id: string;
+	readonly name: string;
+	/** The arguments the file holds, parsed when they were JSON. */
+	readonly input: unknown;
+	readonly output: string;
+	readonly isError: boolean;
+}
+
+/**
+ * One turn of a transcript, as a session file records it.
+ *
+ * A user turn is text only. An assistant turn carries the reasoning behind it and every tool it called,
+ * so a reopened thread shows the work that produced its answers, not only the answers.
+ */
+export type HistoryEntry =
+	| {
+			readonly id: string;
+			readonly role: "user";
+			readonly text: string;
+			readonly thinking: null;
+			readonly model: null;
+	  }
+	| {
+			readonly id: string;
+			readonly role: "assistant";
+			readonly text: string;
+			readonly thinking: string | null;
+			readonly model: string | null;
+			readonly tools: readonly HistoryTool[];
+	  };
+
+/**
+ * One page of a session transcript, read newest first.
+ *
+ * `before` is the cursor for the next older page, and null once nothing older remains; `total` is how
+ * many conversation entries the file holds, so a reader can tell where in the transcript it is.
+ */
+export interface HistoryPage {
+	/** Oldest to newest inside the page. */
+	readonly entries: readonly HistoryEntry[];
+	/** Cursor to continue from, or null when this page reached the start of the conversation. */
+	readonly before: number | null;
+	readonly total: number;
+}
+
+export interface AgentCounts {
+	readonly running: number;
+	readonly queued: number;
+	readonly waiting: number;
+	readonly finished: number;
+}
+
+/** One step of a run: what the subagent said, or a tool it called with the output it read back. */
+export type AgentItem =
+	| { readonly kind: "text"; readonly text: string }
+	| { readonly kind: "tool"; readonly name: string; readonly output: string };
+
+/** One run as the tab lists it: no iteration, so the list stays small. */
+export interface AgentTaskSummary {
+	readonly id: string;
+	readonly agent: string;
+	readonly label: string;
+	readonly status: string;
+	readonly model: string | null;
+	readonly createdAt: number | null;
+	readonly startedAt: number | null;
+	readonly endedAt: number | null;
+}
+
+/** Every run the open thread's agent published, newest first. */
+export interface AgentList {
+	readonly counts: AgentCounts;
+	readonly tasks: readonly AgentTaskSummary[];
+}
+
+/** One run with the iteration it produced, in the order it happened. */
+export interface AgentDetail {
+	readonly id: string;
+	readonly agent: string;
+	readonly label: string;
+	readonly status: string;
+	readonly items: readonly AgentItem[];
+	/** True when the read hit its caps, so what is shown is not the whole run. */
+	readonly truncated: boolean;
+}
+
 export type ClientMessage =
 	| ({ readonly kind: "open"; readonly id: string } & OpenThreadRequest)
 	| { readonly kind: "close"; readonly threadId: string }
@@ -761,6 +850,15 @@ export type ClientMessage =
 			readonly response: ExtensionUiResponse;
 	  }
 	| { readonly kind: "sessions"; readonly id: string }
+	/** One page of a session file's transcript; the newest page when `before` is absent. */
+	| {
+			readonly kind: "history";
+			readonly id: string;
+			readonly action: "page";
+			readonly sessionPath: string;
+			readonly before?: number;
+			readonly limit?: number;
+	  }
 	/** A dropped or pasted file, base64 encoded, for the bridge to write into the agent home. */
 	| { readonly kind: "upload"; readonly id: string; readonly name: string; readonly dataBase64: string }
 	| { readonly kind: "git"; readonly id: string; readonly action: "status" }
@@ -857,7 +955,19 @@ export type ClientMessage =
 	| { readonly kind: "profiles"; readonly id: string; readonly action: "rename"; readonly name: string; readonly to: string }
 	| { readonly kind: "profiles"; readonly id: string; readonly action: "delete"; readonly name: string }
 	/** Make a profile the global default and set the orchestrator it selects. */
-	| { readonly kind: "profiles"; readonly id: string; readonly action: "activate"; readonly name: string };
+	| { readonly kind: "profiles"; readonly id: string; readonly action: "activate"; readonly name: string }
+	/**
+	 * Subagent activity of the thread whose session file is `sessionPath`. Without one the bridge answers
+	 * with the most recently written presence file, which is the best it can do with no thread named.
+	 */
+	| { readonly kind: "agents"; readonly id: string; readonly action: "list"; readonly sessionPath?: string }
+	| {
+			readonly kind: "agents";
+			readonly id: string;
+			readonly action: "detail";
+			readonly sessionPath?: string;
+			readonly taskId: string;
+	  };;
 
 export type ServerMessage =
 	| {
@@ -880,6 +990,8 @@ export type ServerMessage =
 	| { readonly kind: "log"; readonly threadId: string; readonly line: string }
 	| { readonly kind: "exited"; readonly threadId: string; readonly code: number | null }
 	| { readonly kind: "sessions"; readonly id: string; readonly items: readonly SessionSummary[] }
+	/** Answer to `{kind:"history", action:"page"}`. */
+	| { readonly kind: "history"; readonly id: string; readonly data: HistoryPage }
 	/** Answer to `{kind:"upload"}`: where the file landed and how many bytes were written. */
 	| { readonly kind: "upload"; readonly id: string; readonly data: UploadedFile }
 	/** Answer to `{kind:"git", action:"status"}`. */
@@ -918,6 +1030,8 @@ export type ServerMessage =
 			readonly kind: "mcp";
 			readonly id: string;
 	  } & McpResult)
+	/** Answer to either `agents` action; which one is known from the request id. */
+	| { readonly kind: "agents"; readonly id: string; readonly data: AgentList | AgentDetail }
 	| { readonly kind: "error"; readonly id?: string; readonly message: string };
 
 /** One memory answer, tagged with the action that asked for it. */

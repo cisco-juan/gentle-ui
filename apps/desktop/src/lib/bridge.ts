@@ -1,7 +1,10 @@
 import type {
+	AgentDetail,
+	AgentList,
 	ClientMessage,
 	ExtensionUiResponse,
 	GitStatus,
+	HistoryPage,
 	MemoryContextView,
 	MemoryProjectsView,
 	MemorySearchView,
@@ -51,6 +54,13 @@ export type ProfilesRequest =
 	| { readonly action: "activate"; readonly name: string };
 
 export type ProfilesAnswer = ProfilesView | ProfilesActivation;
+
+/** What the Agents tab asks for: the list for a thread, then one run's iteration. */
+export type AgentsRequest =
+	| { readonly action: "list"; readonly sessionPath?: string }
+	| { readonly action: "detail"; readonly sessionPath?: string; readonly taskId: string };
+
+export type AgentsAnswer = AgentList | AgentDetail;
 
 interface Pending {
 	readonly resolve: (value: unknown) => void;
@@ -132,6 +142,28 @@ export class BridgeClient {
 	sessions(): Promise<readonly SessionSummary[]> {
 		const id = this.#nextId();
 		return this.#request<readonly SessionSummary[]>({ kind: "sessions", id });
+	}
+
+	/**
+	 * One page of a session file's transcript, newest first.
+	 *
+	 * `before` is the cursor the previous page returned; leaving it out reads the newest page. The bridge
+	 * only reads files under the session directory it lists, so a path from anywhere else is refused.
+	 */
+	history(request: {
+		readonly sessionPath: string;
+		readonly before?: number;
+		readonly limit?: number;
+	}): Promise<HistoryPage> {
+		const id = this.#nextId();
+		return this.#request<HistoryPage>({
+			kind: "history",
+			id,
+			action: "page",
+			sessionPath: request.sessionPath,
+			...(request.before === undefined ? {} : { before: request.before }),
+			...(request.limit === undefined ? {} : { limit: request.limit }),
+		});
 	}
 
 	/** Branch and per-file changes of the bridge's workspace. Not thread-scoped. */
@@ -221,6 +253,31 @@ export class BridgeClient {
 		return this.#request<ProfilesAnswer>({ kind: "profiles", id, ...request });
 	}
 
+	/**
+	 * Subagent activity of the thread whose session file is `sessionPath`. One method for the family, typed
+	 * per action, so the tab never builds a wire message of its own.
+	 */
+	agents(request: { readonly action: "list"; readonly sessionPath?: string }): Promise<AgentList>;
+	agents(request: { readonly action: "detail"; readonly sessionPath?: string; readonly taskId: string }): Promise<AgentDetail>;
+	agents(request: AgentsRequest): Promise<AgentsAnswer> {
+		const id = this.#nextId();
+		if (request.action === "detail") {
+			return this.#request<AgentDetail>({
+				kind: "agents",
+				id,
+				action: "detail",
+				taskId: request.taskId,
+				...(request.sessionPath === undefined ? {} : { sessionPath: request.sessionPath }),
+			});
+		}
+		return this.#request<AgentList>({
+			kind: "agents",
+			id,
+			action: "list",
+			...(request.sessionPath === undefined ? {} : { sessionPath: request.sessionPath }),
+		});
+	}
+
 	close(): void {
 		this.#closing = true;
 		try {
@@ -273,6 +330,10 @@ export class BridgeClient {
 			this.#settle(message.id, message.items);
 			return;
 		}
+		if (message.kind === "history") {
+			this.#settle(message.id, message.data);
+			return;
+		}
 		if (message.kind === "git" || message.kind === "fs") {
 			this.#settle(message.id, message.data);
 			return;
@@ -286,6 +347,10 @@ export class BridgeClient {
 			return;
 		}
 		if (message.kind === "profiles" || message.kind === "permissions") {
+			this.#settle(message.id, message.data);
+			return;
+		}
+		if (message.kind === "agents") {
 			this.#settle(message.id, message.data);
 			return;
 		}

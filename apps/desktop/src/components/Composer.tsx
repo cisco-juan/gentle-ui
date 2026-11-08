@@ -109,12 +109,25 @@ export function Composer(props: {
 			setMenu(null);
 		};
 		const onFocusRequest = (): void => area?.focus();
+		// A click anywhere outside the chips closes an open menu. A document listener rather than a
+		// full-window backdrop: a fixed overlay over the transcript swallows its wheel events, so a menu
+		// left open made the chat unscrollable.
+		const onPointerDown = (event: PointerEvent): void => {
+			if (menu() === null) return;
+			// A chip press toggles its own menu, and a popover row closes it itself; closing here first
+			// would only make the same gesture reopen it.
+			const inside = event.target instanceof Element ? event.target.closest(".chip-wrap") : null;
+			if (inside !== null) return;
+			setMenu(null);
+		};
 		document.addEventListener("gentle:dismiss", onDismiss);
 		document.addEventListener("gentle:focus-composer", onFocusRequest);
+		document.addEventListener("pointerdown", onPointerDown, true);
 		onCleanup(() => {
 			document.removeEventListener("gentle:submit", onSubmit);
 			document.removeEventListener("gentle:dismiss", onDismiss);
 			document.removeEventListener("gentle:focus-composer", onFocusRequest);
+			document.removeEventListener("pointerdown", onPointerDown, true);
 		});
 	});
 
@@ -248,9 +261,6 @@ export function Composer(props: {
 		>
 			<Show when={dragging()}>
 				<div class="composer-drop">drop to attach</div>
-			</Show>
-			<Show when={menu() !== null}>
-				<div class="menu-backdrop" onClick={() => setMenu(null)} />
 			</Show>
 
 			<Show when={suggestions().length > 0}>
@@ -436,6 +446,8 @@ export function Composer(props: {
 											title={row.terminal === null ? `New threads start in ${row.mode}` : `Set in a terminal: ${row.terminal}`}
 											onClick={() => void chooseMode(row)}
 										>
+											{/* The current mode is marked, not just tinted: a colour alone is not a label. */}
+											<span class="popover-check">{row.current ? "\u2713" : ""}</span>
 											<span class="mono">{row.mode}</span>
 											<Show when={row.current}>
 												<span class="muted">default</span>

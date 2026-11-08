@@ -3,6 +3,8 @@
 export interface ContentBlock {
 	readonly type: string;
 	readonly text?: string;
+	/** Present on a `thinking` block: the model's reasoning for this step. */
+	readonly thinking?: string;
 }
 
 export interface AssistantMessage {
@@ -39,4 +41,15 @@ export function textOf(content: string | readonly ContentBlock[] | undefined): s
 	if (typeof content === "string") return content;
 	if (!Array.isArray(content)) return "";
 	return content.map((block) => (block.type === "text" ? (block.text ?? "") : "")).join("");
+}
+
+/**
+ * The model's own reasoning, from an assistant message whose thinking blocks survived the session file.
+ *
+ * Pi writes thinking as its own content block, so a transcript that only reads `text` blocks loses it:
+ * a reopened thread would show answers with no trace of how they were reached.
+ */
+export function thinkingOf(content: string | readonly ContentBlock[] | undefined): string {
+	if (!Array.isArray(content)) return "";
+	return content.map((block) => (block.type === "thinking" ? (block.thinking ?? "") : "")).join("");
 }

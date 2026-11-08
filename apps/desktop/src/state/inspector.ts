@@ -1,5 +1,14 @@
 import { createEffect, createSignal, untrack, type Accessor } from "solid-js";
-import type { GitFileStatus, GitStatus, ServerMessage, WorkspaceTreeEntry } from "@gentle-shell/protocol";
+import type {
+	AgentCounts,
+	AgentDetail,
+	AgentTaskSummary,
+	GitFileStatus,
+	GitStatus,
+	ServerMessage,
+	WorkspaceTreeEntry,
+} from "@gentle-shell/protocol";
+import { agentOrder } from "../lib/agents.ts";
 import type { BridgeClient } from "../lib/bridge";
 
 /**
@@ -11,9 +20,11 @@ import type { BridgeClient } from "../lib/bridge";
  * the four calls it already offers (`gitStatus`, `gitDiff`, `tree`, `readFile`), all of which are
  * workspace reads that belong to the bridge rather than to a thread.
  *
- * `Agents` shows only what the agent itself publishes through `setWidget("gentle-agents", …)`, the
- * JSON activity line gentle-pi sends in RPC mode. When that line never arrives the tab says so; it
- * never guesses at subagent state from chat records.
+ * `Agents` renders the subagent activity the agent itself publishes. The bridge reads it from the
+ * presence files gentle-pi writes and projects it; the `setWidget("gentle-agents", …)` line only says
+ * that activity moved, so it triggers a re-read instead of being the list. Everything on this panel
+ * belongs to the thread that is open: a switch resets it, and an answer read for another thread is
+ * dropped rather than rendered.
  */
 
 /** The minimal slice of the chat controller the inspector needs; `App.tsx` never leaks in here. */
@@ -22,6 +33,8 @@ export interface ChatControllerLike {
 	/** Reactive, unlike `bridge`: the panels use it to tell "not asked yet" from "asked, nothing there". */
 	readonly connection: Accessor<"connecting" | "connected" | "failed" | "disconnected">;
 	readonly currentThread: Accessor<string | null>;
+	/** Session file of the open thread; it changes on a switch, and every per-thread read is keyed by it. */
+	readonly activePath: Accessor<string | null>;
 	invoke<T>(command: string, params?: Record<string, unknown>): Promise<T>;
 }
 
@@ -38,8 +51,6 @@ export const INSPECTOR_TABS: readonly { readonly id: InspectorTab; readonly labe
 export const TASKS_DIR = "odd/tasks";
 /** Widget key gentle-pi uses for its RPC subagent activity line. */
 export const AGENTS_WIDGET_KEY = "gentle-agents";
-/** Schema tag on that line, so a future shape is ignored instead of mis-rendered. */
-export const AGENTS_SCHEMA = "gentle-agents.activity/v1";
 
 /** A diff longer than this is reported as truncated instead of rendering every line. */
 export const MAX_DIFF_LINES = 3000;
@@ -92,24 +103,21 @@ export interface TasksView {
 	readonly error: string | null;
 }
 
-export interface AgentTask {
-	readonly id: string;
-	readonly agent: string;
-	readonly label: string;
-	readonly status: string;
-	readonly lastStep: string;
-	readonly turns: number;
-	readonly toolCalls: number;
-	readonly elapsedMs: number | null;
+/** What the Agents tab lists: the counters the agent published and every run, newest first. */
+export interface AgentsView {
+	readonly counts: AgentCounts;
+	readonly tasks: readonly AgentTaskSummary[];
+	readonly loading: boolean;
 	readonly error: string | null;
 }
 
-export interface AgentActivity {
-	readonly running: number;
-	readonly queued: number;
-	readonly waiting: number;
-	readonly finished: number;
-	readonly tasks: readonly AgentTask[];
+/** The one run whose modal is open, with the row it was opened from for its header. */
+export interface AgentDetailView {
+	readonly taskId: string;
+	readonly summary: AgentTaskSummary | null;
+	readonly data: AgentDetail | null;
+	readonly loading: boolean;
+	readonly error: string | null;
 }
 
 export interface DiffLine {
@@ -123,7 +131,9 @@ export interface InspectorState {
 	readonly changes: Accessor<ChangesView>;
 	readonly files: Accessor<FilesView>;
 	readonly tasks: Accessor<TasksView>;
-	readonly agents: Accessor<AgentActivity | null>;
+	readonly agents: Accessor<AgentsView>;
+	/** The run whose modal is open, or null when the modal is closed. */
+	readonly agentDetail: Accessor<AgentDetailView | null>;
 	select(tab: InspectorTab): void;
 	/** Reload whatever the active tab shows. */
 	refresh(): Promise<void>;
@@ -133,26 +143,64 @@ export interface InspectorState {
 	openFile(path: string): Promise<void>;
 	openParent(): Promise<void>;
 	loadTasks(): Promise<void>;
+	/** Re-read the open thread's subagent activity: when the tab opens and on every widget update. */
+	loadAgents(): Promise<void>;
+	/** Open one run's iteration in the modal. */
+	openAgent(taskId: string): Promise<void>;
+	closeAgent(): void;
 	stop(): void;
 }
 
 const EMPTY_CHANGES: ChangesView = { status: null, diff: null, loading: false, error: null };
 const EMPTY_FILES: FilesView = { path: "", entries: [], file: null, loading: false, error: null };
 const EMPTY_TASKS: TasksView = { files: [], loading: false, error: null };
+const ZERO_COUNTS: AgentCounts = { running: 0, queued: 0, waiting: 0, finished: 0 };
+const EMPTY_AGENTS: AgentsView = { counts: ZERO_COUNTS, tasks: [], loading: false, error: null };
+
+/** What has been read for one session, and the run whose modal is open inside it. */
+interface AgentState {
+	/** Session path this answer belongs to; null when nothing has been read yet. */
+	readonly sessionPath: string | null;
+	readonly counts: AgentCounts;
+	readonly tasks: readonly AgentTaskSummary[];
+	readonly loading: boolean;
+	readonly error: string | null;
+	readonly detail: AgentDetailState | null;
+}
+
+interface AgentDetailState {
+	readonly sessionPath: string | null;
+	readonly taskId: string;
+	/** The row that was clicked: the detail answer carries no model or timestamps of its own. */
+	readonly summary: AgentTaskSummary | null;
+	readonly data: AgentDetail | null;
+	readonly loading: boolean;
+	readonly error: string | null;
+}
+
+const EMPTY_AGENT_STATE: AgentState = { sessionPath: null, counts: ZERO_COUNTS, tasks: [], loading: false, error: null, detail: null };
 
 /** Create the inspector. Call it from a component so the bridge effect has an owner. */
-export function createInspector(options: { readonly connect: () => BridgeClient | null }): InspectorState {
+export function createInspector(options: {
+	readonly connect: () => BridgeClient | null;
+	/** Session file of the open thread; a change resets everything that belongs to a thread. */
+	readonly activePath: () => string | null;
+}): InspectorState {
 	const [tab, setTab] = createSignal<InspectorTab>("changes");
 	const [connected, setConnected] = createSignal(false);
 	const [changes, setChanges] = createSignal<ChangesView>(EMPTY_CHANGES);
 	const [files, setFiles] = createSignal<FilesView>(EMPTY_FILES);
 	const [tasks, setTasks] = createSignal<TasksView>(EMPTY_TASKS);
-	const [agents, setAgents] = createSignal<AgentActivity | null>(null);
+	const [agentState, setAgentState] = createSignal<AgentState>(EMPTY_AGENT_STATE);
 
 	// Each view carries a generation so a slow answer cannot overwrite a newer one.
 	let changesRun = 0;
 	let filesRun = 0;
 	let tasksRun = 0;
+	let agentsRun = 0;
+	let detailRun = 0;
+	/** The widget line the last read was triggered by, so an unchanged line does not re-read the files. */
+	let lastWidget = "";
 	let unsubscribe: (() => void) | null = null;
 	let bound: BridgeClient | null = null;
 	let retries = 0;
@@ -171,6 +219,14 @@ export function createInspector(options: { readonly connect: () => BridgeClient 
 		bind(client);
 		// A transport that just appeared should fill the tab the panel is already showing.
 		void untrack(loadActive);
+	});
+
+	// The panel is one component that every thread reuses, and subagent activity belongs to the thread
+	// whose session file is open. A switch therefore clears the tab, closes the modal, and bumps both
+	// generations so an answer still in flight for the old thread is dropped when it lands.
+	createEffect(() => {
+		void options.activePath();
+		untrack(resetAgents);
 	});
 
 	function probeForBridge(): void {
@@ -203,9 +259,101 @@ export function createInspector(options: { readonly connect: () => BridgeClient 
 		const record = message.record;
 		if (record.type !== "extension_ui_request" || record.method !== "setWidget") return;
 		if (record.widgetKey !== AGENTS_WIDGET_KEY) return;
+		// The widget line is the trigger, not the list: it says the agent's activity moved, and the tab
+		// re-reads what the bridge projects from the presence files. An unchanged line is not a new reason.
 		const lines = record.widgetLines;
-		const text = Array.isArray(lines) ? lines.filter((line): line is string => typeof line === "string") : [];
-		setAgents(parseAgentActivity(text));
+		const text = Array.isArray(lines) ? lines.filter((line): line is string => typeof line === "string").join("\n") : "";
+		if (text === lastWidget) return;
+		lastWidget = text;
+		void loadAgents();
+	}
+
+	/** What the tab shows: nothing that was read for another session, whatever is in the signal. */
+	function agentView(): AgentsView {
+		const state = agentState();
+		if (state.sessionPath !== options.activePath()) return EMPTY_AGENTS;
+		return { counts: state.counts, tasks: state.tasks, loading: state.loading, error: state.error };
+	}
+
+	/** The open run, or null once the thread it belonged to is no longer the open one. */
+	function agentDetailView(): AgentDetailView | null {
+		const detail = agentState().detail;
+		if (detail === null || detail.sessionPath !== options.activePath()) return null;
+		return { taskId: detail.taskId, summary: detail.summary, data: detail.data, loading: detail.loading, error: detail.error };
+	}
+
+	function resetAgents(): void {
+		agentsRun += 1;
+		detailRun += 1;
+		lastWidget = "";
+		setAgentState(EMPTY_AGENT_STATE);
+	}
+
+	/**
+	 * The read state for `path`. A read that starts for a different thread inherits nothing from the
+	 * previous one — not the rows, not the counters, not an open modal — so a switch never shows the
+	 * previous chat's activity, not even for the moment a read is in flight.
+	 */
+	function agentStateFor(current: AgentState, path: string | null): AgentState {
+		return current.sessionPath === path ? current : { ...EMPTY_AGENT_STATE, sessionPath: path };
+	}
+
+	async function loadAgents(): Promise<void> {
+		const client = options.connect();
+		bind(client);
+		const path = options.activePath();
+		const run = ++agentsRun;
+		if (client === null) {
+			setAgentState({ ...EMPTY_AGENT_STATE, sessionPath: path, error: "the bridge is not connected" });
+			return;
+		}
+
+		setAgentState((current) => ({ ...agentStateFor(current, path), loading: true, error: null }));
+		try {
+			const list = await client.agents({ action: "list", ...(path === null ? {} : { sessionPath: path }) });
+			if (run !== agentsRun || path !== options.activePath()) return;
+			setAgentState((current) => ({
+				...agentStateFor(current, path),
+				counts: list.counts,
+				tasks: agentOrder(list.tasks),
+				loading: false,
+				error: null,
+			}));
+		} catch (error) {
+			if (run !== agentsRun || path !== options.activePath()) return;
+			setAgentState((current) => ({ ...agentStateFor(current, path), loading: false, error: messageOf(error) }));
+		}
+	}
+
+	async function openAgent(taskId: string): Promise<void> {
+		const client = options.connect();
+		bind(client);
+		const path = options.activePath();
+		// The row is what the modal's header describes; the detail answer is only the iteration.
+		const summary = untrack(agentView).tasks.find((task) => task.id === taskId) ?? null;
+		const run = ++detailRun;
+		const starting: AgentDetailState = { sessionPath: path, taskId, summary, data: null, loading: true, error: null };
+		setAgentState((current) => ({ ...current, detail: starting }));
+
+		if (client === null) {
+			setAgentState((current) => settleDetail(current, taskId, { loading: false, error: "the bridge is not connected" }));
+			return;
+		}
+
+		try {
+			const data = await client.agents({ action: "detail", taskId, ...(path === null ? {} : { sessionPath: path }) });
+			if (run !== detailRun || path !== options.activePath()) return;
+			setAgentState((current) => settleDetail(current, taskId, { data, loading: false }));
+		} catch (error) {
+			if (run !== detailRun || path !== options.activePath()) return;
+			setAgentState((current) => settleDetail(current, taskId, { loading: false, error: messageOf(error) }));
+		}
+	}
+
+	function closeAgent(): void {
+		// The answer may still be on its way; bumping the generation makes it land nowhere.
+		detailRun += 1;
+		setAgentState((current) => (current.detail === null ? current : { ...current, detail: null }));
 	}
 
 	function select(next: InspectorTab): void {
@@ -218,6 +366,7 @@ export function createInspector(options: { readonly connect: () => BridgeClient 
 		if (tab() === "changes") return refreshChanges();
 		if (tab() === "files") return openDir(files().path);
 		if (tab() === "tasks") return loadTasks();
+		if (tab() === "agents") return loadAgents();
 		return Promise.resolve();
 	}
 
@@ -373,7 +522,8 @@ export function createInspector(options: { readonly connect: () => BridgeClient 
 		changes,
 		files,
 		tasks,
-		agents,
+		agents: agentView,
+		agentDetail: agentDetailView,
 		select,
 		refresh,
 		refreshChanges,
@@ -382,6 +532,9 @@ export function createInspector(options: { readonly connect: () => BridgeClient 
 		openFile,
 		openParent,
 		loadTasks,
+		loadAgents,
+		openAgent,
+		closeAgent,
 		stop,
 	};
 }
@@ -503,70 +656,15 @@ export function breadcrumb(path: string): readonly { readonly label: string; rea
 	return crumbs;
 }
 
-/**
- * Project the `gentle-agents` widget line into the agents tab.
- *
- * `null` means the agent never published activity, which the tab shows as an empty state. A payload
- * that parses but carries no tasks is a real "nothing running" answer and keeps its counters.
- */
-export function parseAgentActivity(lines: readonly string[]): AgentActivity | null {
-	const raw = lines.find((line) => line.trim().length > 0);
-	if (raw === undefined) return null;
-
-	let value: unknown;
-	try {
-		value = JSON.parse(raw);
-	} catch {
-		return null;
-	}
-	if (typeof value !== "object" || value === null) return null;
-
-	const payload = value as { schema?: unknown; summary?: unknown; tasks?: unknown };
-	if (payload.schema !== AGENTS_SCHEMA || !Array.isArray(payload.tasks)) return null;
-
-	const summary = (typeof payload.summary === "object" && payload.summary !== null ? payload.summary : {}) as Record<
-		string,
-		unknown
-	>;
-	const tasks: AgentTask[] = [];
-	for (const entry of payload.tasks) {
-		const task = agentTaskOf(entry);
-		if (task !== null) tasks.push(task);
-	}
-
-	return {
-		running: countOf(summary.running),
-		queued: countOf(summary.queued),
-		waiting: countOf(summary.waiting),
-		finished: countOf(summary.finished),
-		tasks,
-	};
-}
-
-function agentTaskOf(entry: unknown): AgentTask | null {
-	if (typeof entry !== "object" || entry === null) return null;
-	const summary = (entry as { summary?: unknown }).summary;
-	if (typeof summary !== "object" || summary === null) return null;
-	const task = summary as Record<string, unknown>;
-	if (typeof task.id !== "string" || task.id.length === 0) return null;
-
-	const startedAt = typeof task.startedAt === "number" ? task.startedAt : null;
-	const endedAt = typeof task.endedAt === "number" ? task.endedAt : null;
-	return {
-		id: task.id,
-		agent: typeof task.agent === "string" ? task.agent : "agent",
-		label: typeof task.label === "string" && task.label.length > 0 ? task.label : task.id,
-		status: typeof task.status === "string" ? task.status : "unknown",
-		lastStep: typeof task.lastStep === "string" ? task.lastStep : "",
-		turns: countOf(task.turns),
-		toolCalls: countOf(task.toolCalls),
-		elapsedMs: startedAt === null ? null : Math.max(0, (endedAt ?? Date.now()) - startedAt),
-		error: typeof task.error === "string" && task.error.length > 0 ? task.error : null,
-	};
-}
-
-function countOf(value: unknown): number {
-	return typeof value === "number" && Number.isFinite(value) ? Math.max(0, Math.round(value)) : 0;
+/** Apply an answer to the modal only while it is still the run that is open. */
+function settleDetail(
+	state: AgentState,
+	taskId: string,
+	patch: { readonly loading: boolean; readonly data?: AgentDetail; readonly error?: string },
+): AgentState {
+	const detail = state.detail;
+	if (detail === null || detail.taskId !== taskId) return state;
+	return { ...state, detail: { ...detail, ...patch } };
 }
 
 function messageOf(error: unknown): string {

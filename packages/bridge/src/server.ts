@@ -14,6 +14,8 @@ import type {
 } from "@gentle-shell/protocol";
 import { resolveCommand } from "./commands.ts";
 import { gitDiff, gitStatus } from "./git.ts";
+import { agentDetail, listAgents, type AgentsOptions } from "./agents.ts";
+import { readHistoryPage } from "./history.ts";
 import { memoryContext, memoryProjects, memorySearch, type MemoryOptions } from "./memory.ts";
 import { mcpApply, mcpList, mcpPreview, type McpOptions } from "./mcp.ts";
 import { packagesApply, packagesList, packagesPreview, type PackagesOptions } from "./packages.ts";
@@ -73,6 +75,8 @@ export interface BridgeServerOptions {
 	readonly packages?: PackagesOptions;
 	/** The agent's MCP servers, in the same homes and behind the same confirmation. */
 	readonly mcp?: McpOptions;
+	/** Where the agent publishes subagent activity; a test points this at a scratch agent home. */
+	readonly agents?: AgentsOptions;
 }
 
 export interface BridgeServerHandle {
@@ -139,6 +143,24 @@ export async function startBridgeServer(options: BridgeServerOptions = {}): Prom
 			const list = options.sessions ?? listSessions;
 			try {
 				send(socket, { kind: "sessions", id: message.id, items: await list() });
+			} catch (error) {
+				send(socket, { kind: "error", id: message.id, message: errorMessage(error) });
+			}
+			return;
+		}
+
+		// A transcript page is read from the session file the rail lists, not from Pi: `get_messages` only
+		// ever answers with the tail, which is why a long thread used to reopen as three rows.
+		if (message.kind === "history") {
+			try {
+				send(socket, {
+					kind: "history",
+					id: message.id,
+					data: await readHistoryPage(message.sessionPath, {
+						...(message.before === undefined ? {} : { before: message.before }),
+						...(message.limit === undefined ? {} : { limit: message.limit }),
+					}),
+				});
 			} catch (error) {
 				send(socket, { kind: "error", id: message.id, message: errorMessage(error) });
 			}
@@ -226,6 +248,18 @@ export async function startBridgeServer(options: BridgeServerOptions = {}): Prom
 		if (message.kind === "mcp") {
 			try {
 				await dispatchMcp(socket, message);
+			} catch (error) {
+				send(socket, { kind: "error", id: message.id, message: errorMessage(error) });
+			}
+			return;
+		}
+
+		// Subagent activity belongs to the thread whose session file is open. The agent publishes it under
+		// its own home, one file per Pi incarnation, so the session id in the file name is what finds the
+		// right one; the answer is read from disk and needs no threadId.
+		if (message.kind === "agents") {
+			try {
+				await dispatchAgents(socket, message);
 			} catch (error) {
 				send(socket, { kind: "error", id: message.id, message: errorMessage(error) });
 			}
@@ -580,6 +614,32 @@ export async function startBridgeServer(options: BridgeServerOptions = {}): Prom
 			default:
 				throw new Error(`unsupported mcp action: ${String((message as { action?: unknown }).action)}`);
 		}
+	}
+
+	/**
+	 * Subagent activity of the open thread, projected by the bridge from gentle-pi's presence files.
+	 *
+	 * The files sit under the agent home the child process runs with; an explicit option wins, so a test
+	 * can point the family at a scratch directory.
+	 */
+	async function dispatchAgents(
+		socket: WebSocket,
+		message: Extract<ClientMessage, { kind: "agents" }>,
+	): Promise<void> {
+		const agentOptions: AgentsOptions = { agentHome: options.agents?.agentHome ?? agentHome() };
+		const sessionPath =
+			typeof message.sessionPath === "string" && message.sessionPath.trim().length > 0 ? message.sessionPath : undefined;
+		const scope = sessionPath === undefined ? agentOptions : { ...agentOptions, sessionPath };
+
+		if (message.action === "detail") {
+			send(socket, { kind: "agents", id: message.id, data: await agentDetail({ ...scope, taskId: message.taskId }) });
+			return;
+		}
+		if (message.action === "list") {
+			send(socket, { kind: "agents", id: message.id, data: await listAgents(scope) });
+			return;
+		}
+		throw new Error(`unsupported agents action: ${String((message as { action?: unknown }).action)}`);
 	}
 
 	async function dispatchWorkspace(

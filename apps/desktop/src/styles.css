@@ -658,6 +658,157 @@ main {
 	overflow: hidden;
 }
 
+/* ---------- thinking blocks ---------- */
+
+/* Reasoning is the working behind the answer: same surface and mono face as a tool card, quieter. */
+.thinking {
+	border-radius: 8px;
+	background: var(--surface);
+	overflow: hidden;
+	font-family: var(--mono);
+	font-size: 11.5px;
+}
+
+.thinking-head {
+	display: flex;
+	align-items: center;
+	gap: 9px;
+	width: 100%;
+	padding: 8px 11px;
+	text-align: left;
+}
+
+.thinking-head:hover {
+	background: var(--surface-2);
+}
+
+.thinking-label {
+	color: var(--muted);
+	letter-spacing: 0.4px;
+}
+
+.thinking.running .thinking-label {
+	color: var(--warn);
+}
+
+/* One line, whatever the reasoning does: the header states there is something, not what it says. */
+.thinking-peek {
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	color: var(--muted);
+	opacity: 0.85;
+}
+
+.thinking-count {
+	font-size: 10.5px;
+	color: var(--muted);
+	white-space: nowrap;
+}
+
+.thinking-body {
+	margin: 0;
+	padding: 0 11px 9px;
+	max-height: 260px;
+	overflow: auto;
+	white-space: pre-wrap;
+	word-break: break-word;
+	line-height: 1.5;
+	color: var(--text-soft);
+}
+
+/* ---------- file change cards ---------- */
+
+/* A changed file is its own row: same surface and mono face as a tool card, but the change is the content. */
+.file-change {
+	border-radius: 8px;
+	background: var(--surface);
+	overflow: hidden;
+	font-family: var(--mono);
+	font-size: 11.5px;
+}
+
+.file-change-head {
+	display: flex;
+	align-items: center;
+	gap: 9px;
+	width: 100%;
+	padding: 8px 11px;
+	text-align: left;
+}
+
+.file-change-head:hover {
+	background: var(--surface-2);
+}
+
+/* The reader scans for the file, so the name keeps its width and only the directory gives way. */
+.file-change-path {
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	color: var(--text);
+}
+
+.file-change-dir {
+	display: inline-block;
+	max-width: 55%;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	vertical-align: bottom;
+	color: var(--muted);
+}
+
+.file-change-stats {
+	font-size: 10.5px;
+	color: var(--muted);
+	white-space: nowrap;
+}
+
+.file-change-body {
+	margin: 0;
+	padding: 0 11px 9px;
+	max-height: 320px;
+	overflow: auto;
+	white-space: pre-wrap;
+	word-break: break-word;
+	line-height: 1.5;
+	color: var(--text-soft);
+}
+
+/* The rest of a long file is a count, not more lines: a written file has no sides to show. */
+.file-change-more {
+	padding: 0 11px 9px;
+	font-size: 10.5px;
+}
+
+/* One gutter per side, in the same muted weight as the rest of the chrome. */
+.diff-line {
+	display: block;
+	padding-left: 14px;
+	text-indent: -14px;
+}
+
+.diff-gutter {
+	display: inline-block;
+	width: 14px;
+	text-indent: 0;
+	color: var(--muted);
+	user-select: none;
+}
+
+.diff-line.remove {
+	color: color-mix(in srgb, var(--error) 70%, var(--text-soft));
+}
+
+.diff-line.add {
+	color: color-mix(in srgb, var(--ok) 62%, var(--text-soft));
+}
+
 /* ---------- permission cards ---------- */
 
 .permission {
@@ -904,19 +1055,14 @@ main {
 
 /* ---------- popovers ---------- */
 
-.menu-backdrop {
-	position: fixed;
-	inset: 0;
-	z-index: 8;
-}
-
 .popover {
 	position: absolute;
 	bottom: calc(100% + 8px);
 	left: 0;
 	z-index: 9;
-	min-width: 240px;
-	max-width: 380px;
+	/* Wide enough that "super-yolo" and its current marker fit without being clipped. */
+	min-width: 300px;
+	max-width: 420px;
 	max-height: 320px;
 	overflow-y: auto;
 	padding: 6px;
@@ -948,6 +1094,21 @@ main {
 .popover-row:hover {
 	background: var(--surface-3);
 	color: var(--text);
+}
+
+.popover-check {
+	flex: none;
+	width: 11px;
+	color: var(--ok);
+	font-size: 11px;
+}
+
+.popover-current {
+	margin-left: auto;
+	color: var(--muted);
+	font-size: 10px;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
 }
 
 .popover-row.current {
@@ -1532,4 +1693,144 @@ button:focus-visible,
 	.profile-route {
 		grid-template-columns: 1fr 1fr;
 	}
+}
+/* ---------- jump to end ---------- */
+
+.jump-end {
+	position: sticky;
+	bottom: 8px;
+	z-index: 5;
+	align-self: flex-end;
+	margin-top: -8px;
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	padding: 5px 11px;
+	border-radius: 999px;
+	border: 1px solid var(--line);
+	background: var(--surface-2);
+	color: var(--text-soft);
+	font-size: 11px;
+	box-shadow: 0 8px 22px rgba(0, 0, 0, 0.45);
+}
+
+.jump-end:hover {
+	background: var(--surface-3);
+	color: var(--text);
+}
+
+/* ---------- agents: one row per run, and the run a click opens ---------- */
+
+/* The row itself is the button, so the whole row is the target and the keyboard reaches it. */
+.agent-open {
+	display: flex;
+	flex-direction: column;
+	gap: 1px;
+	width: 100%;
+	min-width: 0;
+	text-align: left;
+	border-radius: 6px;
+}
+
+.agent-head {
+	display: flex;
+	align-items: baseline;
+	gap: 7px;
+	min-width: 0;
+}
+
+.agent-item {
+	margin: 0 0 8px;
+	color: var(--text-soft);
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+}
+
+.agent-item-tool {
+	padding: 7px 9px;
+	border-radius: 8px;
+	background: var(--surface-2);
+}
+
+.agent-item-name {
+	margin-bottom: 4px;
+	font-size: 10.5px;
+	color: var(--muted);
+}
+
+/* A tool output is read through a window instead of pushing the rest of the run off screen. */
+.agent-item-tool pre {
+	margin: 0;
+	max-height: 240px;
+	overflow: auto;
+	font-family: var(--mono);
+	font-size: 11.5px;
+	line-height: 1.5;
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+	color: var(--text-soft);
+}
+
+.agent-modal-backdrop {
+	position: fixed;
+	inset: 0;
+	z-index: 20;
+	display: grid;
+	place-items: center;
+	background: rgba(8, 6, 9, 0.62);
+	backdrop-filter: blur(3px);
+}
+
+.agent-modal {
+	width: min(720px, calc(100vw - 72px));
+	max-height: min(78vh, 720px);
+	display: flex;
+	flex-direction: column;
+	border-radius: 14px;
+	background: var(--surface);
+	box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6);
+	overflow: hidden;
+}
+
+/* The modal takes focus so Escape closes it; a ring around the whole panel would only be noise. */
+.agent-modal:focus {
+	outline: none;
+}
+
+.agent-modal-head {
+	display: flex;
+	align-items: center;
+	gap: 9px;
+	padding: 14px 16px 8px;
+}
+
+.agent-modal-head h2 {
+	flex: 1 1 auto;
+	min-width: 0;
+	margin: 0;
+	font-size: 13.5px;
+	font-weight: 600;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.agent-modal-meta {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 5px;
+	padding: 0 16px 10px;
+	font-size: 10.5px;
+	color: var(--muted);
+}
+
+.agent-modal-meta .divider {
+	color: var(--surface-3);
+}
+
+.agent-modal-body {
+	overflow-y: auto;
+	padding: 0 16px 16px;
+	font-size: 12.5px;
+	line-height: 1.6;
 }

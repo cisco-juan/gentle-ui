@@ -1,7 +1,9 @@
-import { ErrorBoundary, For, Match, Show, Switch, createEffect, type Accessor } from "solid-js";
+import { ErrorBoundary, For, Match, Show, Switch, createEffect, createMemo, createSignal, type Accessor } from "solid-js";
 import type { ExtensionUiResponse } from "@gentle-shell/protocol";
+import { activityOf } from "../lib/activity";
+import { shouldLoadOlder } from "../lib/history";
 import { formatChord, isMac } from "../lib/keybindings";
-import { isNearBottom } from "../lib/scroll";
+import { followAfterWheel, isNearBottom } from "../lib/scroll";
 import type { ChatItem } from "../state/chat";
 import { RichText } from "./RichText";
 import { PermissionCard } from "./PermissionCard";
@@ -15,6 +17,7 @@ type AssistantItem = Extract<ChatItem, { kind: "assistant" }>;
 type ToolItem = Extract<ChatItem, { kind: "tool" }>;
 type PermissionItem = Extract<ChatItem, { kind: "permission" }>;
 type NoticeItem = Extract<ChatItem, { kind: "notice" }>;
+type ThinkingItem = Extract<ChatItem, { kind: "thinking" }>;
 
 /** The shape of a conversation, shown while a thread is being opened or the agent is still starting. */
 function ChatSkeleton() {
@@ -44,18 +47,78 @@ export function ChatView(props: {
 	items: Accessor<ChatItem[]>;
 	draft: Accessor<string>;
 	running: Accessor<boolean>;
+	/** True while the previous page of the transcript is being read. */
+	older: Accessor<boolean>;
+	/** True when the session file holds conversation before what is on screen. */
+	hasOlder: Accessor<boolean>;
+	onLoadOlder: () => void;
 	onAnswer: (requestId: string, response: ExtensionUiResponse) => void;
 }) {
 	let scroller: HTMLDivElement | undefined;
 	// Follow the stream only while the reader is at its end; scrolling up to read must stick.
 	let following = true;
+	// The same fact as `following`, but reactive: the jump-to-end control has to appear on screen.
+	const [away, setAway] = createSignal(false);
+
+	function jumpToEnd(): void {
+		following = true;
+		setAway(false);
+		if (scroller) scroller.scrollTop = scroller.scrollHeight;
+	}
+	/** Scroll height measured before an older page was asked for; null when none is on its way. */
+	let anchor: number | null = null;
+	/** The rows that were on screen at the last commit, so a prepend can be told from an append. */
+	let previous: readonly ChatItem[] = [];
 
 	createEffect(() => {
 		const items = props.items();
 		props.draft();
+		// The skeleton occupies the pane until the history lands; pin once more when it leaves, because
+		// the height the scroll needs is only real after that swap.
+		props.loading();
+		const before = previous;
+		previous = items;
+
+		// An older page lands at the top: everything that was on screen is still there, as its tail.
+		// Measuring the height around the prepend keeps the row the reader was reading under their eyes.
+		const landed =
+			anchor !== null &&
+			before.length > 0 &&
+			items.length > before.length &&
+			items[items.length - before.length] === before[0];
+		if (landed && anchor !== null) {
+			const height = anchor;
+			anchor = null;
+			if (scroller) {
+				const added = scroller.scrollHeight - height;
+				if (added > 0) scroller.scrollTop += added;
+			}
+			return;
+		}
+
 		// Sending a message is a request to see the answer, wherever the reader had scrolled to.
-		if (items[items.length - 1]?.kind === "user") following = true;
+		if (items[items.length - 1]?.kind === "user") {
+			following = true;
+			setAway(false);
+		}
 		if (following && scroller) scroller.scrollTop = scroller.scrollHeight;
+	});
+
+	const activity = createMemo(() => {
+		const items = props.items();
+		const last = items[items.length - 1] ?? null;
+		return activityOf({
+			running: props.running(),
+			draft: props.draft(),
+			lastKind: last?.kind ?? null,
+			lastName: last?.kind === "tool" ? last.name : undefined,
+			lastStatus:
+				last?.kind === "tool" || last?.kind === "thinking"
+					? last.status
+					: last?.kind === "permission"
+						? "running"
+						: undefined,
+		});
 	});
 
 	return (
@@ -63,9 +126,30 @@ export function ChatView(props: {
 			class="chat"
 			ref={scroller}
 			onScroll={() => {
-				if (scroller) following = isNearBottom(scroller);
+				if (!scroller) return;
+				following = isNearBottom(scroller);
+				setAway(!following);
+				if (shouldLoadOlder({ scrollTop: scroller.scrollTop, loading: props.older(), hasOlder: props.hasOlder() })) {
+					// Measured before the page arrives, so the prepend can put the reader back where they were.
+					anchor = scroller.scrollHeight;
+					props.onLoadOlder();
+				}
+			}}
+			onWheel={(event) => {
+				// Settled by the gesture itself: a stream that lands between the wheel and the scroll event
+				// would otherwise pin the reader back to the end and make scrolling feel blocked.
+				if (scroller) following = followAfterWheel(scroller, event.deltaY);
+				setAway(!following);
 			}}
 		>
+			<Show when={props.older()}>
+				{/* The top of the transcript while the turns before it are read; it leaves with the page. */}
+				<div class="skeleton-bubble" role="status" aria-busy="true" aria-label="Loading older messages">
+					<Skeleton width="38%" height="11px" />
+					<Skeleton width="72%" height="11px" />
+				</div>
+			</Show>
+
 			<Show when={props.loading()}>
 				<ChatSkeleton />
 			</Show>
@@ -100,11 +184,59 @@ export function ChatView(props: {
 				</article>
 			</Show>
 
-			<Show when={props.running() && props.draft().length === 0}>
-				<div class="working">
+			<Show when={away()}>
+				<button class="jump-end" onClick={jumpToEnd} title="Scroll to the newest message">
+					<span aria-hidden="true">↓</span> jump to end
+				</button>
+			</Show>
+
+			<Show when={activity()}>{(line) => (
+				<div class="working" role="status" aria-live="polite">
 					<span class="pulse" />
-					working… <span class="muted">Esc to interrupt</span>
+					{line()}… <span class="muted">Esc to interrupt</span>
 				</div>
+			)}</Show>
+		</div>
+	);
+}
+
+/** How much of the reasoning the header shows: enough to recognise it, not enough to read it there. */
+const THINKING_PEEK = 120;
+
+/**
+ * The first line of the reasoning, flattened and cut to a header's width.
+ *
+ * Reasoning arrives in fragments and can be empty, all newlines, or a single unbroken line, so the
+ * peek is derived rather than sliced: a header that wraps or throws stops being a header.
+ */
+function thinkingPeek(text: string): string {
+	const first = text.split("\n").find((line) => line.trim().length > 0) ?? "";
+	const flat = first.trim().replace(/\s+/g, " ");
+	return flat.length > THINKING_PEEK ? `${flat.slice(0, THINKING_PEEK).trimEnd()}…` : flat;
+}
+
+/**
+ * The model's reasoning: a summary line while it streams, the whole text on request.
+ *
+ * A run that is still thinking opens it, because the reader is waiting on it; a finished block
+ * collapses, because the answer is what they came for and reasoning is the working behind it.
+ */
+function ThinkingBlock(props: { item: ThinkingItem }) {
+	const [open, setOpen] = createSignal(props.item.status === "running");
+	const peek = (): string => thinkingPeek(props.item.text);
+	const chars = (): number => props.item.text.trim().length;
+
+	return (
+		<div class="thinking" classList={{ running: props.item.status === "running" }}>
+			<button class="thinking-head" aria-expanded={open()} onClick={() => setOpen((current) => !current)}>
+				<span class="chevron-static">{open() ? "▾" : "▸"}</span>
+				<span class="thinking-label">thinking</span>
+				<span class="thinking-peek">{peek()}</span>
+				<span class="thinking-count">{chars()} chars</span>
+			</button>
+
+			<Show when={open()}>
+				<pre class="thinking-body">{props.item.text}</pre>
 			</Show>
 		</div>
 	);
@@ -154,6 +286,10 @@ function Row(props: { item: ChatItem; onAnswer: (requestId: string, response: Ex
 						<RichText text={assistant().text} />
 					</article>
 				)}
+			</Match>
+
+			<Match when={item().kind === "thinking" ? (item() as ThinkingItem) : undefined}>
+				{(thinking) => <ThinkingBlock item={thinking()} />}
 			</Match>
 
 			<Match when={item().kind === "tool" ? (item() as ToolItem) : undefined}>
