@@ -191,3 +191,69 @@ test("review assess forwards the base ref and the relayed untracked declaration"
 		assert.deepEqual(await waiting, ASSESSMENT);
 	}
 });
+
+/**
+ * The three verbs a reviewer collect hands out, pinned on the wire.
+ *
+ * The payload is the part a spread can silently drop — `review()` sent `{kind, id, action}` and
+ * nothing else for a long time (L20) — so each shape is asserted whole, with the provider's own
+ * tokens and the reviewer result expected to reach the wire unchanged.
+ */
+test("review forwards the lens-context, capture-result and acknowledge payloads unchanged", async () => {
+	const tokens = [
+		"--lineage=review-b005087be055cc9b",
+		"--expected-revision=sha256:6f2348017329fd5a96c65509735324539ed1e90656dfe107372bc3ab174e603f",
+		"--lens=review-reliability",
+		"--order=0",
+	];
+	const result = {
+		subject_hash: `sha256:${"4".repeat(64)}`,
+		inspection: { status: "completed", paths: ["src/App.tsx"] },
+		findings: [],
+		evidence: ["read src/App.tsx"],
+	};
+	const cases: readonly {
+		readonly send: (client: BridgeClient) => Promise<unknown>;
+		readonly action: string;
+		readonly payload: Record<string, unknown>;
+		readonly answer: unknown;
+	}[] = [
+		{
+			send: (client) => client.review({ action: "lens-context", tokens }),
+			action: "lens-context",
+			payload: { tokens },
+			answer: { lens: "review-reliability", context: "the provider's own context" },
+		},
+		{
+			send: (client) => client.review({ action: "capture-result", tokens, result, dryRun: true }),
+			action: "capture-result",
+			payload: { tokens, result, dryRun: true },
+			answer: { dryRun: true, output: '{"validation":"accepted"}' },
+		},
+		// The same submission without its dry run: the optional field is left off, not sent as false.
+		{
+			send: (client) => client.review({ action: "capture-result", tokens, result }),
+			action: "capture-result",
+			payload: { tokens, result },
+			answer: { dryRun: false, output: '{"schema":"captured"}' },
+		},
+		{
+			send: (client) => client.review({ action: "acknowledge", tokens }),
+			action: "acknowledge",
+			payload: { tokens },
+			answer: { output: '{"schema":"gentle-ai.review-acknowledged/v1"}' },
+		},
+	];
+
+	for (const { send, action, payload, answer } of cases) {
+		const { client, socket } = await opened();
+		const waiting = send(client);
+		const sent = JSON.parse(socket.sent[0] as string) as { id: string };
+
+		assert.deepEqual(sent, { kind: "review", id: sent.id, action, ...payload });
+		assert.equal(socket.sent.length, 1, "one request, and nothing else on the wire");
+
+		socket.message({ kind: "review", id: sent.id, action, data: answer });
+		assert.deepEqual(await waiting, answer);
+	}
+});

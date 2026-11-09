@@ -21,7 +21,10 @@ import { startBridgeServer } from "../src/server.ts";
 import {
 	REVIEW_CONTRACT,
 	answerConsent,
+	reviewAcknowledge,
 	reviewAssess,
+	reviewCaptureResult,
+	reviewLensContext,
 	reviewModeStatus,
 	reviewStart,
 	reviewStatus,
@@ -35,18 +38,21 @@ const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), "fixtures", "revi
  * The fake provider.
  *
  * It answers by verb (`"review status"`, `"review status:lineage"`, `"review start"`, …) from
- * `scenario.json`, and appends every argv to `calls.jsonl`, so a test can assert both what the
- * bridge asked for and what it forwarded.
+ * `scenario.json`, and appends every argv — and the stdin a submission carried — to `calls.jsonl`,
+ * so a test can assert both what the bridge asked for and what it forwarded.
  */
 const FAKE_SOURCE = `const { appendFileSync, readFileSync } = require("node:fs");
 const { dirname, join } = require("node:path");
 const home = dirname(process.argv[1]);
 const args = process.argv.slice(2);
-appendFileSync(join(home, "calls.jsonl"), JSON.stringify({ args }) + "\\n");
 const scenario = JSON.parse(readFileSync(join(home, "scenario.json"), "utf8"));
 const verb = args.slice(0, 2).join(" ");
 const key = args.some((arg) => arg.startsWith("--lineage")) ? verb + ":lineage" : verb;
 const entry = scenario[key] || scenario[verb] || { exit: 0 };
+// Only a verb the test says receives a payload reads stdin: anything else would wait forever on a
+// pipe this fake never closes.
+const stdin = entry.stdin === true ? readFileSync(0, "utf8") : null;
+appendFileSync(join(home, "calls.jsonl"), JSON.stringify({ args, stdin }) + "\\n");
 const respond = () => {
 	if (typeof entry.stderr === "string") process.stderr.write(entry.stderr);
 	if (typeof entry.fixture === "string") process.stdout.write(readFileSync(join(${JSON.stringify(FIXTURES)}, entry.fixture), "utf8"));
@@ -63,6 +69,8 @@ interface FakeResponse {
 	readonly stderr?: string;
 	readonly exit?: number;
 	readonly delayMs?: number;
+	/** Read the submission the bridge piped to this verb, and record it beside the argv. */
+	readonly stdin?: boolean;
 }
 
 type FakeScenario = Readonly<Record<string, FakeResponse>>;
@@ -72,6 +80,8 @@ interface FakeCli {
 	set(scenario: FakeScenario): void;
 	/** Every argv the fake received, in order; empty when it was never started. */
 	calls(): readonly (readonly string[])[];
+	/** The stdin each call carried, in the same order, or null when it was handed none. */
+	inputs(): readonly (string | null)[];
 }
 
 function fakeCli(t: TestContext, scenario: FakeScenario): FakeCli {
@@ -89,13 +99,20 @@ function fakeCli(t: TestContext, scenario: FakeScenario): FakeCli {
 			writeFileSync(scenarioPath, JSON.stringify(next));
 		},
 		calls() {
-			if (!existsSync(logPath)) return [];
-			return readFileSync(logPath, "utf8")
-				.split("\n")
-				.filter((line) => line.length > 0)
-				.map((line) => (JSON.parse(line) as { args: readonly string[] }).args);
+			return recorded().map((call) => call.args);
+		},
+		inputs() {
+			return recorded().map((call) => call.stdin);
 		},
 	};
+
+	function recorded(): readonly { readonly args: readonly string[]; readonly stdin: string | null }[] {
+		if (!existsSync(logPath)) return [];
+		return readFileSync(logPath, "utf8")
+			.split("\n")
+			.filter((line) => line.length > 0)
+			.map((line) => JSON.parse(line) as { args: readonly string[]; stdin: string | null });
+	}
 }
 
 /** A throwaway directory that removes itself when the test ends. */
@@ -132,6 +149,14 @@ function tokensOf(name: string): string[] {
 		next_transition: { execute: { arguments: readonly { token: string }[] } };
 	};
 	return recorded.next_transition.execute.arguments.map((entry) => entry.token);
+}
+
+/** The bindings a recorded collect transition hands out for one capture, verbatim. */
+function collectTokens(name: string): string[] {
+	const recorded = JSON.parse(fixture(name)) as {
+		next_transition: { collect: { inputs: readonly { arguments: readonly { token: string }[] }[] } };
+	};
+	return recorded.next_transition.collect.inputs.flatMap((input) => input.arguments.map((entry) => entry.token));
 }
 
 /** The invocation a recorded consent envelope offers for one answer. */
@@ -813,6 +838,179 @@ test("the bridge relays an assess declaration and a base ref from the wire to th
 		assert.deepEqual(cli.calls(), [
 			["review", "assess", "--cwd", root, "--json", "--base-ref", "HEAD~1", ...declaration],
 		]);
+	} finally {
+		ws.close();
+		await server.close();
+	}
+});
+
+// ---------------------------------------------------------------------------
+// The verbs a reviewer collect hands out: lens context, the submission, the acknowledgement.
+// ---------------------------------------------------------------------------
+
+/** The reviewer result the provider's own `review schema reviewer` describes, minus its findings. */
+const REVIEWER_RESULT = {
+	subject_hash: `sha256:${"4".repeat(64)}`,
+	inspection: { status: "completed", paths: ["packages/bridge/src/review.ts"] },
+	findings: [],
+	evidence: ["read the whole changed path"],
+};
+
+test("lens-context relays the provider's own tokens and returns its context unparsed", async (t) => {
+	const root = repository(t);
+	const context = "GENTLE_AI_REVIEW_INSTRUCTION_BEGIN\ninspect every changed path\nGENTLE_AI_REVIEW_INSTRUCTION_END\n";
+	const cli = fakeCli(t, { "review lens-context": { stdout: context } });
+	const tokens = collectTokens("status-collect.json").map((token) =>
+		token.startsWith("--lens=") ? "--lens=review-reliability" : token,
+	);
+
+	const view = await reviewLensContext(root, tokens, { binary: cli.binary });
+
+	assert.deepEqual(view, { lens: "review-reliability", context });
+	assert.deepEqual(cli.calls(), [["review", "lens-context", ...tokens]]);
+	assert.deepEqual(cli.inputs(), [null], "lens-context takes no payload on stdin");
+});
+
+test("capture-result pipes the reviewer result on stdin with the provider's bindings verbatim", async (t) => {
+	const root = repository(t);
+	const cli = fakeCli(t, { "review capture-result": { stdout: '{"schema":"captured"}\n', stdin: true } });
+	const tokens = collectTokens("status-collect.json");
+
+	const view = await reviewCaptureResult(root, REVIEWER_RESULT, tokens, { binary: cli.binary });
+
+	assert.deepEqual(view, { dryRun: false, output: '{"schema":"captured"}\n' });
+	assert.deepEqual(cli.calls(), [["review", "capture-result", ...tokens, "--input", "-"]]);
+	assert.deepEqual(cli.inputs(), [JSON.stringify(REVIEWER_RESULT)], "the result reaches the provider unchanged");
+});
+
+test("capture-result's dry run is the provider's own preflight, and it admits nothing", async (t) => {
+	const root = repository(t);
+	const cli = fakeCli(t, {
+		"review capture-result": { stdout: '{"schema":"gentle-ai.review-capture-result-dry-run/v1","validation":"accepted"}', stdin: true },
+	});
+	const tokens = collectTokens("status-collect.json");
+
+	const view = await reviewCaptureResult(root, REVIEWER_RESULT, tokens, { binary: cli.binary, dryRun: true });
+
+	assert.deepEqual(view, {
+		dryRun: true,
+		output: '{"schema":"gentle-ai.review-capture-result-dry-run/v1","validation":"accepted"}',
+	});
+	assert.deepEqual(cli.calls(), [["review", "capture-result", ...tokens, "--input", "-", "--preflight"]]);
+});
+
+test("acknowledge replays the provider's continuation and relays its answer", async (t) => {
+	const root = repository(t);
+	const answer = '{"schema":"gentle-ai.review-acknowledged/v1","lineage_id":"review-b005087be055cc9b"}';
+	const cli = fakeCli(t, { "review acknowledge-approved": { stdout: answer } });
+	const tokens = [
+		"--lineage=review-b005087be055cc9b",
+		`--target=sha256:${"0".repeat(64)}`,
+		`--expected-revision=sha256:${"1".repeat(64)}`,
+		"--token=opaque-continuation",
+	];
+
+	const view = await reviewAcknowledge(root, tokens, { binary: cli.binary });
+
+	assert.deepEqual(view, { output: answer });
+	assert.deepEqual(cli.calls(), [["review", "acknowledge-approved", ...tokens]]);
+	assert.deepEqual(cli.inputs(), [null]);
+});
+
+test("the three relayed verbs refuse a foreign token or a duplicated flag, and call nothing", async (t) => {
+	const root = repository(t);
+	const elsewhere = join(scratch(t), "elsewhere");
+	const cli = fakeCli(t, {});
+	const verbs: readonly ((tokens: readonly string[]) => Promise<unknown>)[] = [
+		(tokens) => reviewLensContext(root, tokens, { binary: cli.binary }),
+		(tokens) => reviewCaptureResult(root, REVIEWER_RESULT, tokens, { binary: cli.binary }),
+		(tokens) => reviewAcknowledge(root, tokens, { binary: cli.binary }),
+	];
+	const cases: readonly (readonly [readonly string[], RegExp])[] = [
+		[["not-a-flag"], /is not a --flag/],
+		[["--consent=granted"], /must not answer consent/],
+		[[`--cwd=${elsewhere}`], /targets a different workspace/],
+		[["--lineage=one", "--lineage=two"], /repeats --lineage/],
+		[[], /needs the tokens its transition rendered/],
+	];
+
+	for (const verb of verbs) {
+		for (const [tokens, message] of cases) await assert.rejects(() => verb(tokens), message);
+	}
+	assert.deepEqual(cli.calls(), [], "the provider must not run for a refused continuation");
+});
+
+test("capture-result refuses the flags the bridge itself supplies, and a payload that is not a result", async (t) => {
+	const root = repository(t);
+	const cli = fakeCli(t, { "review capture-result": { stdout: "{}", stdin: true } });
+	const tokens = collectTokens("status-collect.json");
+	const cases: readonly (readonly [unknown, readonly string[], RegExp])[] = [
+		[REVIEWER_RESULT, ["--input=/tmp/result.json"], /this bridge supplies itself/],
+		[REVIEWER_RESULT, ["--preflight"], /this bridge supplies itself/],
+		[null, tokens, /a JSON object/],
+		[[REVIEWER_RESULT], tokens, /a JSON object/],
+		["a reviewer result", tokens, /a JSON object/],
+	];
+
+	for (const [payload, relayed, message] of cases) {
+		await assert.rejects(() => reviewCaptureResult(root, payload, relayed, { binary: cli.binary }), message);
+	}
+	assert.deepEqual(cli.calls(), []);
+});
+
+test("the bridge routes the three continuation actions and answers each with its own shape", async (t) => {
+	const root = repository(t);
+	const cli = fakeCli(t, {
+		"review lens-context": { stdout: "the provider's own context" },
+		"review capture-result": { stdout: '{"schema":"captured"}', stdin: true },
+		"review acknowledge-approved": { stdout: '{"acknowledged":true}' },
+	});
+	const server = await startBridgeServer({ workspace: root, review: { binary: cli.binary } });
+	const ws = new WebSocket(`ws://127.0.0.1:${server.port}/?token=${server.token}`);
+	const tokens = collectTokens("status-collect.json");
+	const actions = ["lens-context", "capture-result", "acknowledge"] as const;
+	try {
+		await new Promise((resolve) => ws.on("open", resolve));
+		const answers: unknown[] = [];
+		for (const action of actions) {
+			const answered = next(ws, (message) => message.kind === "review" && message.id === `wire-${action}`);
+			ws.send(JSON.stringify({ kind: "review", id: `wire-${action}`, action, tokens, result: REVIEWER_RESULT, dryRun: false }));
+			const message = await answered;
+			assert.equal(message.kind, "review");
+			if (message.kind !== "review") return;
+			assert.equal(message.action, action);
+			answers.push(message.data);
+		}
+
+		assert.deepEqual(answers, [
+			{ lens: "review-reliability", context: "the provider's own context" },
+			{ dryRun: false, output: '{"schema":"captured"}' },
+			{ output: '{"acknowledged":true}' },
+		]);
+		assert.equal(cli.calls().length, 3, "each action reached the provider exactly once");
+	} finally {
+		ws.close();
+		await server.close();
+	}
+});
+
+test("the bridge answers a capture-result it cannot serve with the same typed error", async (t) => {
+	const root = repository(t);
+	const cli = fakeCli(t, { "review capture-result": { stdout: "{}", stdin: true } });
+	const server = await startBridgeServer({ workspace: root, review: { binary: cli.binary } });
+	const ws = new WebSocket(`ws://127.0.0.1:${server.port}/?token=${server.token}`);
+	try {
+		await new Promise((resolve) => ws.on("open", resolve));
+		const answered = next(ws, (message) => message.kind === "error" && message.id === "review-capture-bad");
+		ws.send(
+			JSON.stringify({ kind: "review", id: "review-capture-bad", action: "capture-result", tokens: [], result: {} }),
+		);
+
+		const message = await answered;
+		assert.equal(message.kind, "error");
+		if (message.kind !== "error") return;
+		assert.match(message.message, /needs the tokens its transition rendered/);
+		assert.deepEqual(cli.calls(), []);
 	} finally {
 		ws.close();
 		await server.close();

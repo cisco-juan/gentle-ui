@@ -290,6 +290,37 @@ export interface ReviewConsent {
 }
 
 /**
+ * `review lens-context`: the provider's finished context for one lens.
+ *
+ * The context is an opaque prompt — the provider states that every token is carried verbatim by the
+ * collect transition and that nothing is left for the caller to assemble — so it is relayed whole and
+ * never parsed into a shape this panel invented.
+ */
+export interface ReviewLensContextView {
+	/** The lens the provider emitted it for, read from the provider's own `--lens` token. */
+	readonly lens: string;
+	readonly context: string;
+}
+
+/**
+ * `review capture-result`: one reviewer submission, answered by the provider's own manifest.
+ *
+ * `dryRun` says the provider ran its own `--preflight`, which validates the capture binding and the
+ * result admission and persists nothing: the panel is then proving the pipeline, not admitting anything.
+ * The answer itself is relayed whole, because its shape is the provider's.
+ */
+export interface ReviewCaptureResultView {
+	readonly dryRun: boolean;
+	readonly output: string;
+}
+
+/** `review acknowledge-approved`: the provider's own continuation, replayed and relayed back whole. */
+export interface ReviewAcknowledgeView {
+	/** The provider's own acknowledged envelope, verbatim. */
+	readonly output: string;
+}
+
+/**
  * The answer to a start: the frozen lineage, the consent question that must be answered first, or
  * the record that the change was skipped.
  */
@@ -965,6 +996,25 @@ export type ClientMessage =
 	| { readonly kind: "review"; readonly id: string; readonly action: "start"; readonly tokens: readonly string[] }
 	/** Answer the blocking consent question by replaying the chosen invocation. */
 	| { readonly kind: "review"; readonly id: string; readonly action: "consent"; readonly invocation: string }
+	/**
+	 * The provider's finished context for one lens, with the tokens its collect transition rendered.
+	 * The tokens are the provider's own; nothing here is assembled from a name or a digest.
+	 */
+	| { readonly kind: "review"; readonly id: string; readonly action: "lens-context"; readonly tokens: readonly string[] }
+	/**
+	 * One reviewer submission. `result` is the reviewer result JSON, relayed to the provider unchanged on
+	 * stdin; `dryRun` asks the provider's own `--preflight`, which validates and admits nothing.
+	 */
+	| {
+			readonly kind: "review";
+			readonly id: string;
+			readonly action: "capture-result";
+			readonly tokens: readonly string[];
+			readonly result: unknown;
+			readonly dryRun?: boolean;
+	  }
+	/** Replay the provider's own `acknowledge-approved` continuation, never composed here. */
+	| { readonly kind: "review"; readonly id: string; readonly action: "acknowledge"; readonly tokens: readonly string[] }
 	/** Engram's memory for the bridge's workspace. Every action here reads; none of them writes. */
 	| { readonly kind: "memory"; readonly id: string; readonly action: "context" }
 	| {
@@ -1175,4 +1225,7 @@ export type ReviewResult =
 	| { readonly action: "assess"; readonly data: ReviewAssessment }
 	| { readonly action: "mode"; readonly data: ReviewMode }
 	| { readonly action: "start"; readonly data: ReviewStartView }
-	| { readonly action: "consent"; readonly data: ReviewStartView };
+	| { readonly action: "consent"; readonly data: ReviewStartView }
+	| { readonly action: "lens-context"; readonly data: ReviewLensContextView }
+	| { readonly action: "capture-result"; readonly data: ReviewCaptureResultView }
+	| { readonly action: "acknowledge"; readonly data: ReviewAcknowledgeView };

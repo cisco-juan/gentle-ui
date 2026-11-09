@@ -34,7 +34,10 @@ import {
 import { resolvePiEnvironment } from "./pi-environment.ts";
 import {
 	answerConsent,
+	reviewAcknowledge,
 	reviewAssess,
+	reviewCaptureResult,
+	reviewLensContext,
 	reviewModeStatus,
 	reviewStart,
 	reviewStatus,
@@ -402,7 +405,7 @@ export async function startBridgeServer(options: BridgeServerOptions = {}): Prom
 			...(options.review ?? {}),
 			...(options.extension === undefined ? {} : { packageRoot: options.extension }),
 		};
-		// The two actions with a payload are narrowed first, so the rest reads as one three-action family.
+		// The actions that carry a payload are narrowed first, so the rest reads as one plain family.
 		if (message.action === "consent") {
 			send(socket, {
 				kind: "review",
@@ -431,6 +434,38 @@ export async function startBridgeServer(options: BridgeServerOptions = {}): Prom
 				id: message.id,
 				action: "assess",
 				data: await reviewAssess(workspace, reviewOptions, message.baseRef, message.untracked),
+			});
+			return;
+		}
+		// The three verbs a reviewer collect hands out. Each relays the provider's own tokens, and the
+		// submission's own dry run, so nothing here composes a continuation out of a name or a digest.
+		if (message.action === "lens-context") {
+			send(socket, {
+				kind: "review",
+				id: message.id,
+				action: "lens-context",
+				data: await reviewLensContext(workspace, message.tokens, reviewOptions),
+			});
+			return;
+		}
+		if (message.action === "capture-result") {
+			send(socket, {
+				kind: "review",
+				id: message.id,
+				action: "capture-result",
+				data: await reviewCaptureResult(workspace, message.result, message.tokens, {
+					...reviewOptions,
+					...(message.dryRun === undefined ? {} : { dryRun: message.dryRun }),
+				}),
+			});
+			return;
+		}
+		if (message.action === "acknowledge") {
+			send(socket, {
+				kind: "review",
+				id: message.id,
+				action: "acknowledge",
+				data: await reviewAcknowledge(workspace, message.tokens, reviewOptions),
 			});
 			return;
 		}

@@ -14,7 +14,10 @@ import type {
 	ProfileRoute,
 	ProfilesActivation,
 	ProfilesView,
+	ReviewAcknowledgeView,
 	ReviewAssessment,
+	ReviewCaptureResultView,
+	ReviewLensContextView,
 	ReviewMode,
 	ReviewStartView,
 	ReviewStatusView,
@@ -33,9 +36,24 @@ export type ReviewRequest =
 	| { readonly action: "assess"; readonly baseRef?: string; readonly untracked?: readonly string[] }
 	| { readonly action: "mode" }
 	| { readonly action: "start"; readonly tokens: readonly string[] }
-	| { readonly action: "consent"; readonly invocation: string };
+	| { readonly action: "consent"; readonly invocation: string }
+	| { readonly action: "lens-context"; readonly tokens: readonly string[] }
+	| {
+			readonly action: "capture-result";
+			readonly tokens: readonly string[];
+			readonly result: unknown;
+			readonly dryRun?: boolean;
+	  }
+	| { readonly action: "acknowledge"; readonly tokens: readonly string[] };
 
-export type ReviewAnswer = ReviewStatusView | ReviewAssessment | ReviewMode | ReviewStartView;
+export type ReviewAnswer =
+	| ReviewStatusView
+	| ReviewAssessment
+	| ReviewMode
+	| ReviewStartView
+	| ReviewLensContextView
+	| ReviewCaptureResultView
+	| ReviewAcknowledgeView;
 
 /** What the Memory panel can ask for. Every one of these reads; none of them writes. */
 export type MemoryRequest =
@@ -209,6 +227,17 @@ export class BridgeClient {
 	review(request: { readonly action: "mode" }): Promise<ReviewMode>;
 	review(request: { readonly action: "start"; readonly tokens: readonly string[] }): Promise<ReviewStartView>;
 	review(request: { readonly action: "consent"; readonly invocation: string }): Promise<ReviewStartView>;
+	/** The provider's own context for one lens: the tokens are its collect transition's, not ours. */
+	review(request: { readonly action: "lens-context"; readonly tokens: readonly string[] }): Promise<ReviewLensContextView>;
+	/** One reviewer submission; `dryRun` asks the provider's own `--preflight`, which admits nothing. */
+	review(request: {
+		readonly action: "capture-result";
+		readonly tokens: readonly string[];
+		readonly result: unknown;
+		readonly dryRun?: boolean;
+	}): Promise<ReviewCaptureResultView>;
+	/** Replay the provider's own `acknowledge-approved` continuation. */
+	review(request: { readonly action: "acknowledge"; readonly tokens: readonly string[] }): Promise<ReviewAcknowledgeView>;
 	review(request: ReviewRequest): Promise<ReviewAnswer> {
 		const id = this.#nextId();
 		if (request.action === "start") {
@@ -216,6 +245,22 @@ export class BridgeClient {
 		}
 		if (request.action === "consent") {
 			return this.#request<ReviewStartView>({ kind: "review", id, action: "consent", invocation: request.invocation });
+		}
+		if (request.action === "lens-context") {
+			return this.#request<ReviewLensContextView>({ kind: "review", id, action: "lens-context", tokens: request.tokens });
+		}
+		if (request.action === "capture-result") {
+			return this.#request<ReviewCaptureResultView>({
+				kind: "review",
+				id,
+				action: "capture-result",
+				tokens: request.tokens,
+				result: request.result,
+				...(request.dryRun === undefined ? {} : { dryRun: request.dryRun }),
+			});
+		}
+		if (request.action === "acknowledge") {
+			return this.#request<ReviewAcknowledgeView>({ kind: "review", id, action: "acknowledge", tokens: request.tokens });
 		}
 		if (request.action === "assess") {
 			// Both fields are optional and both must survive the trip: a spread the client forgets to

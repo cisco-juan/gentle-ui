@@ -2,14 +2,17 @@ import { execFile } from "node:child_process";
 import { existsSync, readdirSync, realpathSync, statSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
 import type {
+	ReviewAcknowledgeView,
 	ReviewAssessment,
 	ReviewAuthority,
+	ReviewCaptureResultView,
 	ReviewCollectArgument,
 	ReviewCollectInput,
 	ReviewConsent,
 	ReviewConsentChoice,
 	ReviewExecuteStep,
 	ReviewFrozen,
+	ReviewLensContextView,
 	ReviewMode,
 	ReviewStartView,
 	ReviewStatusView,
@@ -71,6 +74,11 @@ export interface ReviewOptions {
 export interface ReviewConsentOptions extends ReviewOptions {
 	/** Repository the replayed command runs in; the invocation's own `--cwd` still wins for the provider. */
 	readonly cwd?: string;
+}
+
+export interface ReviewCaptureOptions extends ReviewOptions {
+	/** The provider's own `--preflight`: validate the binding and the result, and persist nothing. */
+	readonly dryRun?: boolean;
 }
 
 interface ReviewRun {
@@ -192,6 +200,62 @@ export async function reviewModeStatus(root: string, options: ReviewOptions = {}
 		source: text(status.source) ?? "",
 		revision: text(status.revision) ?? "",
 	};
+}
+
+/**
+ * The provider's finished context for one lens.
+ *
+ * Its tokens are the collect transition's own and are relayed verbatim; the context that comes back is
+ * an opaque prompt, so it is returned whole rather than parsed into fields this bridge would be
+ * inventing. The lens is read from the provider's own `--lens` token, so an answer arriving out of
+ * order can never be pinned to the wrong lens.
+ */
+export async function reviewLensContext(
+	root: string,
+	tokens: readonly string[],
+	options: ReviewOptions = {},
+): Promise<ReviewLensContextView> {
+	const relayed = relayTokens(tokens, root, []);
+	const context = await runJson(resolveReviewBinary(options), ["review", "lens-context", ...relayed], root, options);
+	return { lens: lensOf(relayed), context };
+}
+
+/**
+ * Submit one reviewer result, or prove the same submission with the provider's own dry run.
+ *
+ * The result travels to the provider on stdin under its own `--input -`, exactly as it arrived: the
+ * provider is the authority on the reviewer schema and on admission, so this side validates only that
+ * it was handed a JSON object and adds nothing to it. `dryRun` is the provider's `--preflight` flag —
+ * the documented way to validate a binding and a result without capturing either.
+ */
+export async function reviewCaptureResult(
+	root: string,
+	payload: unknown,
+	tokens: readonly string[],
+	options: ReviewCaptureOptions = {},
+): Promise<ReviewCaptureResultView> {
+	const relayed = relayTokens(tokens, root, CAPTURE_FLAGS);
+	const input = reviewerResultJson(payload);
+	const dryRun = options.dryRun === true;
+	const argv = ["review", "capture-result", ...relayed, "--input", "-", ...(dryRun ? ["--preflight"] : [])];
+	const output = await runJson(resolveReviewBinary(options), argv, root, options, input);
+	return { dryRun, output };
+}
+
+/**
+ * Replay the provider's own `acknowledge-approved` continuation.
+ *
+ * The continuation is the provider's: its lineage, target, revision and opaque token are relayed as they
+ * were handed out, because only that exact command burns approved authority. Nothing here composes one.
+ */
+export async function reviewAcknowledge(
+	root: string,
+	tokens: readonly string[],
+	options: ReviewOptions = {},
+): Promise<ReviewAcknowledgeView> {
+	const relayed = relayTokens(tokens, root, []);
+	const output = await runJson(resolveReviewBinary(options), ["review", "acknowledge-approved", ...relayed], root, options);
+	return { output };
 }
 
 /**
@@ -397,6 +461,66 @@ function startArgv(tokens: readonly string[], root: string): string[] {
 	return ["review", "start", ...tokens, "--consent", "relay"];
 }
 
+/** The flags `review capture-result` gets from this bridge: the payload it pipes, and its dry run. */
+const CAPTURE_FLAGS = ["--input", "--preflight"] as const;
+
+/**
+ * The tokens a provider transition rendered, relayed whole.
+ *
+ * One validating helper for every verb that replays the provider's own command line, so the rules are
+ * the same everywhere: a token is a `--flag`, never an answer to consent, never another workspace, not
+ * a flag this bridge supplies itself, and not one it already relayed. A caller can therefore never turn
+ * a continuation into a different command.
+ */
+function relayTokens(tokens: readonly string[], root: string, reserved: readonly string[]): readonly string[] {
+	if (!Array.isArray(tokens) || tokens.length === 0) {
+		throw new Error("a review continuation needs the tokens its transition rendered");
+	}
+
+	const seen = new Set<string>();
+	const relayed: string[] = [];
+	for (const token of tokens) {
+		assertProviderToken(token, root);
+		const flag = flagOf(token);
+		if (reserved.includes(flag)) {
+			throw new Error(`the review token ${JSON.stringify(token)} names ${flag}, which this bridge supplies itself`);
+		}
+		if (seen.has(flag)) throw new Error(`the review token ${JSON.stringify(token)} repeats ${flag}`);
+		seen.add(flag);
+		relayed.push(token);
+	}
+	return relayed;
+}
+
+/** A token's flag name, with or without the `=value` the provider renders beside it. */
+function flagOf(token: string): string {
+	const equals = token.indexOf("=");
+	return equals === -1 ? token : token.slice(0, equals);
+}
+
+/** The lens a relayed token list selects, from the provider's own `--lens` rendering. */
+function lensOf(tokens: readonly string[]): string {
+	const token = tokens.find((entry) => entry.startsWith("--lens="));
+	return token === undefined ? "" : token.slice("--lens=".length);
+}
+
+/**
+ * The reviewer result, serialized exactly as it arrived.
+ *
+ * A result is a JSON object; anything else would reach the provider as input it cannot read and a
+ * refusal this panel could have said first. Its fields are the provider's business, not this bridge's.
+ */
+function reviewerResultJson(payload: unknown): string {
+	if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
+		throw new Error("a reviewer result must be a JSON object, which is what the provider's reviewer schema describes");
+	}
+	try {
+		return JSON.stringify(payload);
+	} catch (error) {
+		throw new Error(`the reviewer result could not be serialized: ${errorMessage(error)}`);
+	}
+}
+
 /** The three flags a provider's untracked selection binding can become on `review assess`. */
 const UNTRACKED_FLAGS = [
 	"--untracked-scope=",
@@ -470,22 +594,29 @@ async function runJson(
 	argv: readonly string[],
 	cwd: string | undefined,
 	options: ReviewOptions,
+	stdin?: string,
 ): Promise<string> {
-	const result = await runCli(binary, argv, cwd, options);
+	const result = await runCli(binary, argv, cwd, options, stdin);
 	if (result.code !== 0) throw commandFailure(argv, result);
 	return result.stdout;
 }
 
-/** Spawn the provider with an argv array. A shell string is never built, so no token can be re-read. */
+/**
+ * Spawn the provider with an argv array. A shell string is never built, so no token can be re-read.
+ *
+ * A submission is written to the provider's stdin and the stream is then closed, because `--input -`
+ * reads to end of input: an open stream would hang the panel instead of answering it.
+ */
 function runCli(
 	binary: string,
 	argv: readonly string[],
 	cwd: string | undefined,
 	options: ReviewOptions,
+	stdin?: string,
 ): Promise<ReviewRun> {
 	const timeoutMs = options.timeoutMs ?? DEFAULT_REVIEW_TIMEOUT_MS;
 	return new Promise<ReviewRun>((resolve, reject) => {
-		execFile(
+		const child = execFile(
 			binary,
 			[...argv],
 			{
@@ -515,6 +646,12 @@ function runCli(
 				resolve({ stdout, stderr, code: typeof failure.code === "number" ? failure.code : -1 });
 			},
 		);
+		// A submission has to be written and the stream closed, or the provider waits on input forever. A
+		// write that fails because the provider exited first is not an error to report: the answer is.
+		if (stdin !== undefined) {
+			child.stdin?.on("error", () => {});
+			child.stdin?.end(stdin);
+		}
 	});
 }
 
