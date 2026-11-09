@@ -288,6 +288,15 @@ T41 [~] The Review panel runs a lens: fetch the provider's own lens context, run
     either needs a real open capture, which this pass refused to run. Both views relay the provider's stdout verbatim
     and claim nothing about its fields.
 
+T43 [ ] The bridge runs a reviewer: a one-shot, sessionless `pi --print` against the lens context the provider
+    emitted, returning its verdict text. S1
+    The wire half exposed `lens-context` but nothing that produces a result worth capturing, and the panel must not
+    run a prompt inside the user's open thread — that would spend their context and pollute the transcript with
+    review output. Pi 1.5.0 on this machine supports `--print` (non-interactive) and `--no-session` (ephemeral), so
+    the reviewer can run in its own throwaway process, with the model the user already selected and no session file
+    left behind. Cost is the user's, so a real run stays behind the panel's confirmation and the provider's
+    `--preflight` still proves the submission before anything is admitted.
+
 T42 [ ] Acknowledgement from the panel, behind an explicit confirmation. S1
     Decision (user, 2026-11-09): "si, ambas" — the lenses run from the UI and the acknowledgement may be given
     from the UI too, with the same explicit-confirmation pattern already used for permissions and for writing
