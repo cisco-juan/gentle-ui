@@ -288,8 +288,12 @@ function TransitionBlock(props: { panel: ReviewPanel; status: ReviewStatusView }
 				</p>
 			</Show>
 
-			{/* A collect names the provider's own verbs; the reviewer step that would satisfy them is absent. */}
-			<Show when={step().kind === "collect"}>
+			{/* A collect names the provider's own verbs. When the panel already offers the choice above, the
+			    copy says so instead of calling it a reviewer step this panel lacks. */}
+			<Show when={step().kind === "collect" && step().satisfiedAbove}>
+				<p class="inspector-empty">This step is the choice offered above; nothing else is needed here.</p>
+			</Show>
+			<Show when={step().kind === "collect" && !step().satisfiedAbove}>
 				<Show
 					when={step().verbs.length > 0}
 					fallback={

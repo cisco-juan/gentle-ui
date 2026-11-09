@@ -93,3 +93,37 @@ test("an absent or malformed transition is reported as such, never invented", ()
 	assert.equal(malformed.summary, "The provider's next transition is not one this panel can read.");
 	assert.deepEqual(malformed.verbs, []);
 });
+
+test("a collect the panel already answers above is not described as a missing reviewer step", () => {
+	const base = describeReviewTransition({
+		kind: "collect",
+		reasonCode: "empty_candidate_base_ref_required",
+		execute: null,
+		collect: [{ name: "base", captureOperation: "external.base_ref", schema: "", arguments: [], binding: {} }],
+	} as never);
+	assert.equal(base.satisfiedAbove, true);
+
+	const selection = describeReviewTransition({
+		kind: "collect",
+		reasonCode: "intended_untracked_selection_required",
+		execute: null,
+		collect: [
+			{
+				name: "intended_untracked_selection",
+				captureOperation: "external.select_intended_untracked",
+				schema: "",
+				arguments: [],
+				binding: {},
+			},
+		],
+	} as never);
+	assert.equal(selection.satisfiedAbove, true);
+
+	const reviewer = describeReviewTransition({
+		kind: "collect",
+		reasonCode: "reviewer_run_required",
+		execute: null,
+		collect: [{ name: "risk", captureOperation: "gentle-ai capture-result", schema: "", arguments: [], binding: {} }],
+	} as never);
+	assert.equal(reviewer.satisfiedAbove, false);
+});

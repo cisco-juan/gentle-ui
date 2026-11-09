@@ -19,6 +19,12 @@ export interface ReviewTransitionSummary {
 	readonly verbs: readonly string[];
 	/** False because capturing a result needs a reviewer step this panel does not implement yet. */
 	readonly capturesRunnable: false;
+	/**
+	 * True when the provider is waiting for a choice this panel already offers above the block — the base
+	 * ref of a clean tree, or a declaration for untracked files — so the copy must not call it a reviewer
+	 * step the panel lacks.
+	 */
+	readonly satisfiedAbove: boolean;
 }
 
 const ABSENT: ReviewTransitionSummary = {
@@ -27,7 +33,15 @@ const ABSENT: ReviewTransitionSummary = {
 	summary: "The provider offered no next transition.",
 	verbs: [],
 	capturesRunnable: false,
+	satisfiedAbove: false,
 };
+
+/** Provider operations this panel answers itself, above the transition block. */
+const SATISFIED_ABOVE: ReadonlySet<string> = new Set([
+	"external.select_intended_untracked",
+	"external.base_ref",
+	"external.empty_candidate_base_ref_required",
+]);
 
 /** Turn the provider's transition into the panel's sentence, or say plainly that there is none. */
 export function describeReviewTransition(
@@ -64,6 +78,7 @@ export function describeReviewTransition(
 					: `The provider is waiting for ${slots.join(", ")}.`,
 			verbs,
 			capturesRunnable: false,
+			satisfiedAbove: verbs.some((verb) => SATISFIED_ABOVE.has(verb)) || reasonCode.includes("base_ref"),
 		};
 	}
 
@@ -71,7 +86,7 @@ export function describeReviewTransition(
 }
 
 function summary(kind: "stop" | "execute", reasonCode: string, line: string): ReviewTransitionSummary {
-	return { kind, reasonCode, summary: line, verbs: [], capturesRunnable: false };
+	return { kind, reasonCode, summary: line, verbs: [], capturesRunnable: false, satisfiedAbove: false };
 }
 
 /** A trimmed, non-empty string, or the empty string: the provider's emptiness is not a value. */
