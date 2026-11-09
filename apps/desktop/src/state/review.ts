@@ -1,3 +1,4 @@
+import { isNothingPendingError } from "../lib/review-pending";
 import { createSignal, untrack, type Accessor } from "solid-js";
 import type {
 	ReviewAssessment,
@@ -34,6 +35,8 @@ export interface ReviewView {
 	readonly loading: boolean;
 	readonly error: string | null;
 	readonly assessmentError: string | null;
+	/** True when the provider's answer was "nothing uncommitted to assess", which is a state, not a failure. */
+	readonly assessmentPending: boolean;
 	/** What just happened: a started review, a skipped change, a consent question waiting. */
 	readonly notice: string | null;
 }
@@ -43,7 +46,10 @@ export interface ReviewPanel {
 	/** The blocking question the provider asked, if any. */
 	readonly consent: Accessor<ReviewConsent | null>;
 	readonly busy: Accessor<boolean>;
+	readonly assessmentPending: Accessor<boolean>;
 	refresh(): Promise<void>;
+	/** Assess pending changes, or committed work against `baseRef` when the tree is clean. */
+	assess(baseRef?: string): Promise<void>;
 	/** Start with the tokens the status on screen carries. */
 	start(): Promise<void>;
 	/** Answer the consent card by replaying the chosen invocation. */
@@ -58,6 +64,7 @@ const EMPTY_VIEW: ReviewView = {
 	loading: false,
 	error: null,
 	assessmentError: null,
+	assessmentPending: false,
 	notice: null,
 };
 
@@ -94,13 +101,33 @@ export function createReviewPanel(options: { readonly connect: () => BridgeClien
 
 		// The assessment is context for the consent the user is about to give, so its own failure is
 		// reported beside that block instead of replacing a status the provider did answer.
+		await assess();
+	}
+
+	/**
+	 * The risk a start would freeze, of pending changes or of committed work against a base.
+	 *
+	 * A clean tree makes the provider answer "no pending changes"; that is a state the panel offers an
+	 * action for, not a failure it colours red.
+	 */
+	async function assess(baseRef?: string): Promise<void> {
+		const client = options.connect();
+		if (client === null) return;
+		const current = run;
 		try {
-			const assessment = await client.review({ action: "assess" });
+			const assessment = await client.review({ action: "assess", ...(baseRef === undefined ? {} : { baseRef }) });
 			if (current !== run || stopped) return;
-			setView((value) => ({ ...value, assessment, assessmentError: null }));
+			setView((value) => ({ ...value, assessment, assessmentError: null, assessmentPending: false }));
 		} catch (error) {
 			if (current !== run || stopped) return;
-			setView((value) => ({ ...value, assessment: null, assessmentError: messageOf(error) }));
+			const message = messageOf(error);
+			const pending = isNothingPendingError(message);
+			setView((value) => ({
+				...value,
+				assessment: null,
+				assessmentError: pending ? null : message,
+				assessmentPending: pending,
+			}));
 		}
 	}
 
@@ -163,7 +190,7 @@ export function createReviewPanel(options: { readonly connect: () => BridgeClien
 		run += 1;
 	}
 
-	return { view, consent, busy, refresh, start, answer, stop };
+	return { view, consent, busy, assessmentPending: () => view().assessmentPending, refresh, assess, start, answer, stop };
 }
 
 /**

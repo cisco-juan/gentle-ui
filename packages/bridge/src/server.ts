@@ -410,7 +410,12 @@ export async function startBridgeServer(options: BridgeServerOptions = {}): Prom
 			return;
 		}
 		if (message.action === "assess") {
-			send(socket, { kind: "review", id: message.id, action: "assess", data: await reviewAssess(workspace, reviewOptions) });
+			send(socket, {
+				kind: "review",
+				id: message.id,
+				action: "assess",
+				data: await reviewAssess(workspace, reviewOptions, message.baseRef),
+			});
 			return;
 		}
 		send(socket, { kind: "review", id: message.id, action: "mode", data: await reviewModeStatus(workspace, reviewOptions) });

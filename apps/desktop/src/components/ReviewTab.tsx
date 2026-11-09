@@ -1,6 +1,7 @@
 import { For, Show, createSignal, type JSX } from "solid-js";
 import type { ReviewConsent, ReviewStatusView } from "@gentle-shell/protocol";
 import "../review.css";
+import { COMMITTED_BASE_REF } from "../lib/review-pending";
 import { modeLabel, modeTone, type ReviewPanel } from "../state/review";
 import { SkeletonLines } from "./Skeleton";
 
@@ -124,7 +125,24 @@ function AssessmentBlock(props: { panel: ReviewPanel }): JSX.Element {
 	return (
 		<section class="review-block">
 			<h3 class="review-title">risk</h3>
-			<Show when={view().assessmentError}>{(error) => <Clamped text={error()} />}</Show>
+			{/* A clean tree is not a failure: the provider names the base it can assess instead, and so do we. */}
+			<Show when={props.panel.assessmentPending()}>
+				<p class="review-notice">
+					Nothing is uncommitted, so there are no pending changes to assess. The last commit can be assessed against its
+					parent.
+				</p>
+				<button
+					type="button"
+					class="inspector-action"
+					disabled={view().loading}
+					onClick={() => void props.panel.assess(COMMITTED_BASE_REF)}
+				>
+					assess the last commit
+				</button>
+			</Show>
+			<Show when={!props.panel.assessmentPending() && view().assessmentError}>
+				{(error) => <Clamped text={error()} />}
+			</Show>
 			<Show when={assessment()}>
 				{(answer) => (
 					<>

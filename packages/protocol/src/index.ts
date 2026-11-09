@@ -866,7 +866,9 @@ export type ClientMessage =
 	| { readonly kind: "fs"; readonly id: string; readonly action: "tree"; readonly path?: string }
 	| { readonly kind: "fs"; readonly id: string; readonly action: "read"; readonly path: string }
 	/** Native review, always against the bridge's workspace. */
-	| { readonly kind: "review"; readonly id: string; readonly action: "status" | "assess" | "mode" }
+	| { readonly kind: "review"; readonly id: string; readonly action: "status" | "mode" }
+	/** The risk a start would freeze; with a base ref, of committed work against that base. */
+	| { readonly kind: "review"; readonly id: string; readonly action: "assess"; readonly baseRef?: string }
 	/** Start a review with the tokens its own status transition carried. */
 	| { readonly kind: "review"; readonly id: string; readonly action: "start"; readonly tokens: readonly string[] }
 	/** Answer the blocking consent question by replaying the chosen invocation. */
