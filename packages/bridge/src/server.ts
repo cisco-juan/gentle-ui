@@ -2,6 +2,7 @@ import { createServer } from "node:http";
 import { randomBytes } from "node:crypto";
 import { WebSocketServer, type WebSocket } from "ws";
 import type {
+	AppearanceResult,
 	ClientMessage,
 	McpResult,
 	PackagesResult,
@@ -15,6 +16,7 @@ import type {
 import { resolveCommand } from "./commands.ts";
 import { gitDiff, gitStatus } from "./git.ts";
 import { agentDetail, listAgents, type AgentsOptions } from "./agents.ts";
+import { appearanceRead, appearanceSetTheme, type AppearanceOptions } from "./appearance.ts";
 import { readHistoryPage } from "./history.ts";
 import { memoryContext, memoryProjects, memorySearch, type MemoryOptions } from "./memory.ts";
 import { mcpApply, mcpList, mcpPreview, type McpOptions } from "./mcp.ts";
@@ -77,6 +79,8 @@ export interface BridgeServerOptions {
 	readonly mcp?: McpOptions;
 	/** Where the agent publishes subagent activity; a test points this at a scratch agent home. */
 	readonly agents?: AgentsOptions;
+	/** The themes on this machine and the rose's own configuration; a test points this at a scratch tree. */
+	readonly appearance?: AppearanceOptions;
 }
 
 export interface BridgeServerHandle {
@@ -202,6 +206,18 @@ export async function startBridgeServer(options: BridgeServerOptions = {}): Prom
 		if (message.kind === "permissions") {
 			try {
 				await dispatchPermissions(socket, message);
+			} catch (error) {
+				send(socket, { kind: "error", id: message.id, message: errorMessage(error) });
+			}
+			return;
+		}
+
+		// Themes belong to the user's own configuration too. One family, two answers: the catalog and the
+		// selected theme are read from three folders and Pi's settings file, and choosing one writes that
+		// single key. The refusal of a name this machine does not have is `appearance.ts`'s, not the UI's.
+		if (message.kind === "appearance") {
+			try {
+				await dispatchAppearance(socket, message);
 			} catch (error) {
 				send(socket, { kind: "error", id: message.id, message: errorMessage(error) });
 			}
@@ -618,6 +634,29 @@ export async function startBridgeServer(options: BridgeServerOptions = {}): Prom
 				});
 			default:
 				throw new Error(`unsupported mcp action: ${String((message as { action?: unknown }).action)}`);
+		}
+	}
+
+	/**
+	 * Themes and the rose's own configuration: a read of the catalog and the selected theme, and one write.
+	 *
+	 * `read` answers the theme Pi's settings select, or the one a `name` asks about; `theme` writes that
+	 * single key, and a name this machine does not have is refused there rather than by the picker.
+	 */
+	async function dispatchAppearance(
+		socket: WebSocket,
+		message: Extract<ClientMessage, { kind: "appearance" }>,
+	): Promise<void> {
+		const appearanceOptions = options.appearance ?? {};
+		const reply = (answer: AppearanceResult): void => send(socket, { kind: "appearance", id: message.id, ...answer });
+
+		switch (message.action) {
+			case "read":
+				return reply({ action: "read", data: await appearanceRead(appearanceOptions, message.name) });
+			case "theme":
+				return reply({ action: "theme", data: await appearanceSetTheme(message.name, appearanceOptions) });
+			default:
+				throw new Error(`unsupported appearance action: ${String((message as { action?: unknown }).action)}`);
 		}
 	}
 

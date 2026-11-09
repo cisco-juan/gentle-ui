@@ -453,6 +453,59 @@ export interface PermissionsView {
 }
 
 /**
+ * Themes and the rose: the two configuration files Gentle Shell already owns, read so this UI can follow
+ * them.
+ *
+ * Pi stores the selected theme as one key of its own `settings.json`, so a read is one file and a write is
+ * one key. The catalog is what the machine actually has — Pi's built-ins, the themes gentle-pi ships and the
+ * user's own folder — and choosing a name that is not in it is refused on the bridge, not hidden by the UI.
+ *
+ * `rose` carries the two files as text rather than parsed values: the harness's own rules for them
+ * (`parseBannerConfig`, `parseAnimationPolicy`) live in the UI, and a second parser here would be a second
+ * answer to the same file.
+ */
+export type AppearanceState = "ok" | "unavailable";
+
+/** Where one available theme's definition comes from; a later source wins over an earlier one. */
+export type ThemeSource = "builtin" | "gentle-pi" | "user";
+
+export interface ThemeCatalogEntry {
+	readonly name: string;
+	readonly source: ThemeSource;
+}
+
+/** One theme as a web UI paints it: its `colors` resolved against the file's own `vars`. */
+export interface ResolvedTheme {
+	readonly name: string;
+	readonly tokens: Readonly<Record<string, string>>;
+}
+
+export interface AppearanceTheme {
+	/** The theme Pi's settings select, or null when the file names none this bridge can read. */
+	readonly current: string | null;
+	readonly available: readonly ThemeCatalogEntry[];
+	/**
+	 * The current theme resolved, or the one the request named. Null when it has no file to resolve: `system`
+	 * is synthesised by Pi from the terminal's colours, which a GUI has to answer with the OS scheme instead.
+	 */
+	readonly tokens: ResolvedTheme | null;
+}
+
+/** `banner.json` and `animations.json`, verbatim, so the UI parses them with the harness's own rules. */
+export interface AppearanceRose {
+	readonly banner: string | null;
+	readonly animations: string | null;
+}
+
+export interface AppearanceView {
+	readonly state: AppearanceState;
+	readonly reason: ProfilesFailureReason | null;
+	readonly message: string;
+	readonly theme: AppearanceTheme;
+	readonly rose: AppearanceRose;
+}
+
+/**
  * What the agent the bridge launches is configured with, read from its own files.
  *
  * The homes below are the ones `packages/bridge/src/pi-environment.ts` pins for the child process, so
@@ -886,6 +939,10 @@ export type ClientMessage =
 	/** The default permission mode for new threads. Only a lowering is ever written from here. */
 	| { readonly kind: "permissions"; readonly id: string; readonly action: "status" }
 	| { readonly kind: "permissions"; readonly id: string; readonly action: "default"; readonly mode: string }
+	/** Themes and the rose's own configuration. `name` asks for one theme instead of the selected one. */
+	| { readonly kind: "appearance"; readonly id: string; readonly action: "read"; readonly name?: string }
+	/** Choose a theme: the one key Pi reads, refused when the name is not in the catalog. */
+	| { readonly kind: "appearance"; readonly id: string; readonly action: "theme"; readonly name: string }
 	/** The agent's own configuration: homes, packages, skills, MCP servers and the keys the sheet shows. */
 	| { readonly kind: "settings"; readonly id: string; readonly action: "read" }
 	/** Plan a change to one of the writable keys: the same family, and a different writer behind it. */
@@ -1021,6 +1078,10 @@ export type ServerMessage =
 			readonly id: string;
 	  } & PermissionsResult)
 	| ({
+			readonly kind: "appearance";
+			readonly id: string;
+	  } & AppearanceResult)
+	| ({
 			readonly kind: "settings";
 			readonly id: string;
 	  } & SettingsResult)
@@ -1044,6 +1105,9 @@ export type MemoryResult =
 
 /** One permissions answer. */
 export type PermissionsResult = { readonly action: "status" | "default"; readonly data: PermissionsView };
+
+/** One appearance answer: the theme that is selected now, whether it was read or just chosen. */
+export type AppearanceResult = { readonly action: "read" | "theme"; readonly data: AppearanceView };
 
 /**
  * One settings answer, tagged with the action that asked for it.

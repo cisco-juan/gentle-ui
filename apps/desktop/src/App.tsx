@@ -1,4 +1,4 @@
-import { Show, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
+import { Show, createEffect, createMemo, createSignal, on, onCleanup, onMount } from "solid-js";
 import { ChatView } from "./components/ChatView";
 import { Composer } from "./components/Composer";
 import { Inspector } from "./components/Inspector";
@@ -14,6 +14,7 @@ import { describeCommand, shellAction } from "./lib/commands";
 import { gridTemplate } from "./lib/layout";
 import { folderLabel, relativeTime } from "./lib/threads";
 import { parsePermissionStatus } from "./lib/permissions";
+import { createAppearancePanel } from "./state/appearance";
 import { createChatController } from "./state/chat";
 import { createLayout } from "./state/layout";
 import { createPermissionsPanel } from "./state/permissions";
@@ -53,6 +54,18 @@ export default function App() {
 	createEffect(() => {
 		if (chat.connection() === "connected") void profiles.refresh();
 	});
+
+	// The theme is one key of the agent's own settings file: read on connect, painted on the app root, and
+	// chosen from the Settings sheet. It writes the same file the terminal reads, never a copy of it.
+	const appearance = createAppearancePanel({ connect: () => chat.bridge() });
+	onCleanup(appearance.stop);
+	createEffect(
+		on([() => chat.connection(), () => chat.activePath()], () => {
+			// Read on connect, and again when a chat starts: the rose's own files belong to the harness, and a
+			// person may have changed them in the terminal between two conversations.
+			if (chat.connection() === "connected") void appearance.refresh();
+		}),
+	);
 
 	// The permission default lives in a file gentle-pi owns too; the chip reads it and only lowers it.
 	const permissions = createPermissionsPanel({
@@ -228,6 +241,7 @@ export default function App() {
 		{ label: "model", value: chat.model() || "unknown" },
 		{ label: "profile", value: profiles.effectiveName() },
 		{ label: "permissions", value: permissions.view().data?.default ?? "unknown" },
+		{ label: "theme", value: appearance.current() ?? "unknown" },
 		{ label: "commands", value: `${chat.commands().length} available` },
 		{ label: "threads", value: `${chat.threads().length} saved` },
 		{ label: "bridge", value: chat.connection() },
@@ -277,6 +291,7 @@ export default function App() {
 					hasOlder={chat.hasOlder}
 					onLoadOlder={() => void chat.loadOlder()}
 					onAnswer={chat.answerPermission}
+					rose={appearance.rose}
 				/>
 				<Composer
 					onSend={(text) => void chat.send(text)}
@@ -322,7 +337,17 @@ export default function App() {
 			<Palette open={palette() !== null} onClose={closePalette} groups={groups()} />
 
 			<Show when={sheet() === "settings"}>
-				<SettingsSheet facts={facts()} onClose={closeSheet} />
+				<SettingsSheet
+					facts={facts()}
+					theme={{
+						current: appearance.current(),
+						available: appearance.available(),
+						busy: appearance.view().busy,
+						error: appearance.view().error,
+						onSelect: (name) => void appearance.select(name),
+					}}
+					onClose={closeSheet}
+				/>
 			</Show>
 			<Show when={sheet() === "profiles"}>
 				<ProfilesSheet

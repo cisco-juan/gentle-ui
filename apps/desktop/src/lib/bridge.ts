@@ -1,6 +1,7 @@
 import type {
 	AgentDetail,
 	AgentList,
+	AppearanceView,
 	ClientMessage,
 	ExtensionUiResponse,
 	GitStatus,
@@ -61,6 +62,11 @@ export type AgentsRequest =
 	| { readonly action: "detail"; readonly sessionPath?: string; readonly taskId: string };
 
 export type AgentsAnswer = AgentList | AgentDetail;
+
+/** What the theme picker asks for: the catalog, the selected theme, or one theme by name. */
+export type AppearanceRequest =
+	| { readonly action: "read"; readonly name?: string }
+	| { readonly action: "theme"; readonly name: string };
 
 interface Pending {
 	readonly resolve: (value: unknown) => void;
@@ -236,6 +242,17 @@ export class BridgeClient {
 		return this.#request<MemoryAnswer>({ kind: "memory", id, action: request.action });
 	}
 
+	/**
+	 * Themes and the rose's own configuration. `read` answers the selected theme; `name` asks about one
+	 * theme instead of it, which is how `system` is resolved into its `dark` and `light` halves.
+	 */
+	appearance(request: { readonly action: "read"; readonly name?: string }): Promise<AppearanceView>;
+	appearance(request: { readonly action: "theme"; readonly name: string }): Promise<AppearanceView>;
+	appearance(request: AppearanceRequest): Promise<AppearanceView> {
+		const id = this.#nextId();
+		return this.#request<AppearanceView>({ kind: "appearance", id, ...request });
+	}
+
 	/** The default permission mode for new threads. The bridge refuses anything but a lowering. */
 	permissions(request: { readonly action: "status" } | { readonly action: "default"; readonly mode: string }): Promise<PermissionsView> {
 		const id = this.#nextId();
@@ -346,7 +363,7 @@ export class BridgeClient {
 			this.#settle(message.id, message.data);
 			return;
 		}
-		if (message.kind === "profiles" || message.kind === "permissions") {
+		if (message.kind === "profiles" || message.kind === "permissions" || message.kind === "appearance") {
 			this.#settle(message.id, message.data);
 			return;
 		}

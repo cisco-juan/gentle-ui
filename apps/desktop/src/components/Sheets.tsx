@@ -1,4 +1,5 @@
 import { For, Show, onMount, type JSX } from "solid-js";
+import type { ThemeCatalogEntry } from "@gentle-shell/protocol";
 import { formatChord, isMac } from "../lib/keybindings";
 import { Icon } from "./Icon";
 
@@ -34,6 +35,14 @@ export function Sheet(props: { title: string; onClose: () => void; children: JSX
 
 export function SettingsSheet(props: {
 	facts: ReadonlyArray<{ label: string; value: string }>;
+	/** Gentle Shell's own theme choice: the catalog this machine has, and the one Pi's settings select. */
+	theme: {
+		current: string | null;
+		available: readonly ThemeCatalogEntry[];
+		busy: boolean;
+		error: string | null;
+		onSelect: (name: string) => void;
+	};
 	onClose: () => void;
 }) {
 	return (
@@ -50,6 +59,32 @@ export function SettingsSheet(props: {
 						)}
 					</For>
 				</dl>
+			</section>
+			<section>
+				<h3>Theme</h3>
+				<p class="muted">
+					The theme Gentle Shell already uses, from the same settings file the terminal reads. Choosing one
+					writes that file, so the terminal and this window agree.
+				</p>
+				<div class="chips">
+					<For each={props.theme.available}>
+						{(entry) => (
+							<button
+								class="chip"
+								classList={{ open: entry.name === props.theme.current, model: entry.name === props.theme.current }}
+								disabled={props.theme.busy}
+								title={`${entry.name} · ${entry.source}`}
+								onClick={() => props.theme.onSelect(entry.name)}
+							>
+								{entry.name}
+							</button>
+						)}
+					</For>
+				</div>
+				<Show when={props.theme.available.length === 0}>
+					<p class="muted">No theme was found on this machine yet.</p>
+				</Show>
+				<Show when={props.theme.error}>{(error) => <p class="notice error">{error()}</p>}</Show>
 			</section>
 			<section>
 				<h3>Agent settings</h3>

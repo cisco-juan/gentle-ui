@@ -3,6 +3,7 @@ import type { ExtensionUiResponse } from "@gentle-shell/protocol";
 import { activityOf } from "../lib/activity";
 import { shouldLoadOlder } from "../lib/history";
 import { formatChord, isMac } from "../lib/keybindings";
+import type { RoseSettings } from "../lib/rose";
 import { followAfterWheel, isNearBottom } from "../lib/scroll";
 import type { ChatItem } from "../state/chat";
 import { RichText } from "./RichText";
@@ -54,6 +55,8 @@ export function ChatView(props: {
 	hasOlder: Accessor<boolean>;
 	onLoadOlder: () => void;
 	onAnswer: (requestId: string, response: ExtensionUiResponse) => void;
+	/** `banner.json` and `animations.json` as the harness holds them; the documented defaults without them. */
+	rose?: Accessor<RoseSettings>;
 }) {
 	let scroller: HTMLDivElement | undefined;
 	// Follow the stream only while the reader is at its end; scrolling up to read must stick.
@@ -158,7 +161,7 @@ export function ChatView(props: {
 			<Show when={!props.loading() && props.items().length === 0 && props.draft().length === 0}>
 				{/* The start of a chat: the shell's own rose above the empty state, and nowhere else. */}
 				<div class="chat-start">
-					<RoseBanner />
+					<RoseBanner settings={props.rose} />
 					<div class="empty">
 						<h1>Gentle UI</h1>
 						<p>
