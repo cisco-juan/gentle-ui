@@ -118,9 +118,17 @@ T7  [x] Command palette plus a Mod-based keybinding layer and cheat sheet. S4 �
 T8  [x] File drag and drop, clipboard image paste, copy path (upload fallback in dev). S5 — 810c1e7
     Real Tauri paths remain unimplemented; the tested path is the upload fallback, which also works
     when the file cannot be reached from the app.
-T9  [ ] Native review (RDD) panel: candidate, lenses, verdict, acknowledgement. S1
+T9  [~] Native review (RDD) panel: candidate, lenses, verdict, acknowledgement. S1
     Phase one done — cd987b1 — mode, authority, frozen budget, target, risk assessment, the consent card and
-    start. Lens captures, verdicts and acknowledgement are phase two.
+    start. T39 and T40 then closed the assessment paths (base ref, untracked declaration) end to end.
+    Phase two contract, read from the provider itself (`gentle-ai review --help`, contract
+    `gentle-ai.review-integration/v1`, protocol 1.5, gentle-ai 4.3.1): the verbs that finish a review are
+    `capture-result`, `capture-correction-plan`, `capture-refuter`, `capture-unachievable`, `capture-validation`,
+    `acknowledge-approved`, plus the read-only `lens-context`, `inspect-candidate`, `validate`, `reopen-results` and
+    `schema`. Running them from this app needs two things it does not have yet: a reviewer step that produces a
+    result worth capturing (model runs, with the cost that implies), and a decision about who may trigger an
+    acknowledgement. Both are the user's to make, so phase two is being taken in two halves: an observer surface
+    first (show the transition and name the verb without pretending to run it), then the capture half. Lens captures, verdicts and acknowledgement are phase two.
 T10 [x] Packaging: node sidecar, per-OS artifacts via CI matrix, dependency bump workflow. S2 S6
     The pipeline had never been run; three real runs later it produces artifacts on all three platforms
     (run 42535375693, commit 1527cc8): `<name>-0.1.0-1.x86_64.rpm` 74.5 MB,
