@@ -1,6 +1,6 @@
 [English](README.md) · Español
 
-# gentle-ui
+# Gentle UI
 
 <p>
   <a href="https://github.com/Gentleman-Programming/gentle-shell"><img alt="Made with Gentle AI" src="https://img.shields.io/badge/Made%20with-Gentle%20AI-6A4BFF"></a>
@@ -10,7 +10,7 @@
   <img alt="Linux, macOS, Windows" src="https://img.shields.io/badge/platforms-linux%20%7C%20macOS%20%7C%20windows-6E6E6E">
 </p>
 
-gentle-ui es una UI de escritorio para [Gentle Shell](https://github.com/Gentleman-Programming/gentle-shell):
+Gentle UI es una UI de escritorio para [Gentle Shell](https://github.com/Gentleman-Programming/gentle-shell):
 una interfaz multiplataforma sobre el harness de agentes Pi. Corre el mismo agente, contra las mismas
 sesiones y la misma configuración, y dibuja la aplicación en una ventana nativa en lugar de una
 terminal.

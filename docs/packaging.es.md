@@ -1,6 +1,6 @@
 # Empaquetado
 
-Cómo se produce una release de Gentle Shell para Linux, macOS y Windows. La versión corta: Tauri compila
+Cómo se produce una release de Gentle UI para Linux, macOS y Windows. La versión corta: Tauri compila
 por sistema operativo, una matriz de CI corre ese build en cada OS, y el bridge de Node viaja dentro del
 bundle porque los usuarios no tienen Node ni Pi instalados.
 
@@ -39,9 +39,10 @@ desarrollo está listado en [Lo que sigue sin probarse](#lo-que-sigue-sin-probar
 
 `apps/desktop/src-tauri/tauri.conf.json`:
 
-- `productName: "Gentle Shell"` — pasa a ser el nombre de la app (`Gentle Shell.app`, nombre de paquete
-  `gentle-shell`, `Gentle Shell.exe`) y los nombres de archivo por defecto de los artefactos;
-- `title` de la ventana: `"Gentle Shell"` — lo que muestra la barra de título de la única ventana;
+- `productName: "Gentle UI"` — pasa a ser el nombre de la app (`Gentle UI.app`, `Gentle UI.exe`) y los
+  nombres de archivo por defecto de los artefactos; el identificador del bundle queda intacto a propósito, así
+  una instalación existente conserva sus datos;
+- `title` de la ventana: `"Gentle UI"` — lo que muestra la barra de título de la única ventana;
 - `identifier: "dev.gentleshell.desktopui"` — sin cambios, para que los directorios de datos de usuario
   existentes sigan funcionando;
 - `bundle.targets: "all"` — lo que el host pueda producir;
@@ -57,9 +58,9 @@ que el nombre de Cargo nunca llega al usuario.
 
 | Runner | Bundles | Nombres de archivo |
 | --- | --- | --- |
-| `ubuntu-latest` | `.AppImage`, `.deb` | `Gentle Shell_0.1.0_amd64.AppImage`, `gentle-shell_0.1.0_amd64.deb` |
-| `macos-14` | `.dmg` (arm64) | `Gentle Shell_0.1.0_aarch64.dmg` |
-| `windows-latest` | `.msi` | `Gentle Shell_0.1.0_x64_en-US.msi` |
+| `ubuntu-latest` | `.AppImage`, `.deb` | `Gentle UI_0.1.0_amd64.AppImage`, `gentle-ui_0.1.0_amd64.deb` |
+| `macos-latest` | `.dmg` (arm64) | `Gentle UI_0.1.0_aarch64.dmg` |
+| `windows-latest` | `.msi` | `Gentle UI_0.1.0_x64_en-US.msi` |
 
 Los nombres de `.deb` los pasa a minúsculas y guiones el empaquetador de Debian; todo lo demás usa
 `productName`. Rust nunca se compila de forma cruzada: cada artefacto sale de su propio runner.

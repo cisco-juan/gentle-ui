@@ -237,11 +237,16 @@ export default function App() {
 	return (
 		<div
 			class="app"
-			classList={{ "rail-closed": !layout.effective().railOpen, "inspector-closed": !layout.effective().inspectorOpen }}
+			classList={{
+				"rail-closed": !layout.effective().railOpen,
+				"inspector-closed": !layout.effective().inspectorOpen,
+			}}
 			style={{ "grid-template-columns": gridTemplate(layout.effective()) }}
 		>
 			<Sidebar
+				collapsed={layout.collapsed()}
 				onCollapse={() => layout.toggleRail()}
+				onExpand={() => layout.setRailCollapsed(false)}
 				project={PROJECT_LABEL || "current workspace"}
 				connection={chat.connection()}
 				loading={chat.threadsLoading()}
@@ -299,7 +304,7 @@ export default function App() {
 					cost={chat.cost}
 					running={chat.running}
 					hint={chat.hint}
-					railOpen={() => layout.state().railOpen}
+					railOpen={() => !layout.collapsed()}
 					inspectorOpen={() => layout.state().inspectorOpen}
 					onToggleRail={() => layout.toggleRail()}
 					onToggleInspector={() => layout.toggleInspector()}

@@ -14,6 +14,8 @@ import { Skeleton } from "./Skeleton";
 export function Sidebar(props: {
 	project: string;
 	connection: "connecting" | "connected" | "failed" | "disconnected";
+	/** True when the rail is shrunk to icons; the same rail, with its labels out of the way. */
+	collapsed: boolean;
 	/** True until the bridge has answered once: the rail shows a skeleton, not "no threads". */
 	loading: boolean;
 	/** The thread being opened, marked on its row until its history is on screen. */
@@ -22,6 +24,8 @@ export function Sidebar(props: {
 	threads: readonly SessionSummary[];
 	activePath: string | null;
 	onCollapse: () => void;
+	/** Brings the full rail back: a control that only shrinks would be a one-way door. */
+	onExpand: () => void;
 	onNewThread: () => void;
 	onSelectThread: (path: string) => void;
 	onOpenSettings: () => void;
@@ -71,23 +75,41 @@ export function Sidebar(props: {
 	}
 
 	return (
-		<aside class="sidebar">
+		<aside class="sidebar" classList={{ collapsed: props.collapsed }}>
 			<div class="sidebar-head">
-				<button class="icon-btn" title="Hide the sidebar" aria-label="Hide the sidebar" onClick={() => props.onCollapse()}>
+				<button
+					class="icon-btn"
+					title={props.collapsed ? "Expand the sidebar" : "Shrink the sidebar to icons"}
+					aria-label={props.collapsed ? "Expand the sidebar" : "Shrink the sidebar to icons"}
+					aria-expanded={!props.collapsed}
+					onClick={() => (props.collapsed ? props.onExpand() : props.onCollapse())}
+				>
 					<Icon name="panel" />
 				</button>
-				<span class="brand-text">gentle shell</span>
+				{/* The shell's own wordmark, with the petal the terminal draws in front of its prompt. */}
+				<span class="brand">
+					<span class="brand-mark" aria-hidden="true">✿</span>
+					<span class="brand-text">Gentle UI</span>
+				</span>
 			</div>
 
 			<div class="sidebar-actions">
-				<button class="action" onClick={() => props.onNewThread()}>
+				<button class="action" title="New thread" aria-label="New thread" onClick={() => props.onNewThread()}>
 					<Icon name="plus" />
-					<span>New thread</span>
+					<span class="action-label">New thread</span>
 				</button>
 				<button
 					class="action"
+					title="Search threads"
+					aria-label="Search threads"
 					classList={{ on: searching() }}
 					onClick={() => {
+						// A shrunk rail has nowhere to type: the search brings the full rail back instead.
+						if (props.collapsed) {
+							props.onExpand();
+							setSearching(true);
+							return;
+						}
 						// Read the state it is going to, not the one it was: clearing "after" the flip cleared
 						// the query on opening and left the list filtered after closing.
 						const opening = !searching();
@@ -96,11 +118,16 @@ export function Sidebar(props: {
 					}}
 				>
 					<Icon name="search" />
-					<span>Search</span>
+					<span class="action-label">Search</span>
 				</button>
-				<button class="action" onClick={() => props.onOpenShortcuts()}>
+				<button
+					class="action"
+					title="Keyboard shortcuts"
+					aria-label="Keyboard shortcuts"
+					onClick={() => props.onOpenShortcuts()}
+				>
 					<Icon name="keyboard" />
-					<span>Shortcuts</span>
+					<span class="action-label">Shortcuts</span>
 				</button>
 			</div>
 
@@ -149,11 +176,11 @@ export function Sidebar(props: {
 			</div>
 
 			<div class="sidebar-foot">
-				<button class="action" onClick={() => props.onOpenSettings()}>
+				<button class="action" title="Settings" aria-label="Settings" onClick={() => props.onOpenSettings()}>
 					<Icon name="settings" />
-					<span>Settings</span>
+					<span class="action-label">Settings</span>
 				</button>
-				<span class="connection" title={props.connection}>
+				<span class="connection" title={props.connection} aria-label={`bridge ${props.connection}`}>
 					<span class={`dot ${props.connection}`} />
 				</span>
 			</div>

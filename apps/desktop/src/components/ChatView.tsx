@@ -6,6 +6,7 @@ import { formatChord, isMac } from "../lib/keybindings";
 import { followAfterWheel, isNearBottom } from "../lib/scroll";
 import type { ChatItem } from "../state/chat";
 import { RichText } from "./RichText";
+import { RoseBanner } from "./RoseBanner";
 import { PermissionCard } from "./PermissionCard";
 import { ToolCard } from "./ToolCard";
 import { Skeleton } from "./Skeleton";
@@ -155,12 +156,16 @@ export function ChatView(props: {
 			</Show>
 
 			<Show when={!props.loading() && props.items().length === 0 && props.draft().length === 0}>
-				<div class="empty">
-					<h1>gentle shell</h1>
-					<p>
-						Your workspace, your agent. Ask for something, or press <kbd>{formatChord("Mod+K", PLATFORM_MAC)}</kbd>{" "}
-						for the palette.
-					</p>
+				{/* The start of a chat: the shell's own rose above the empty state, and nowhere else. */}
+				<div class="chat-start">
+					<RoseBanner />
+					<div class="empty">
+						<h1>Gentle UI</h1>
+						<p>
+							Your workspace, your agent. Ask for something, or press <kbd>{formatChord("Mod+K", PLATFORM_MAC)}</kbd>{" "}
+							for the palette.
+						</p>
+					</div>
 				</div>
 			</Show>
 

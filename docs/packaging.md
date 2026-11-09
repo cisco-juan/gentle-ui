@@ -1,6 +1,6 @@
 # Packaging
 
-How a Gentle Shell release is produced for Linux, macOS and Windows. The short version: Tauri compiles
+How a Gentle UI release is produced for Linux, macOS and Windows. The short version: Tauri compiles
 per operating system, a CI matrix runs that build on each OS, and the Node bridge travels inside the
 bundle because users do not have Node or Pi installed.
 
@@ -39,9 +39,9 @@ developer machine is listed under [What stays unproven](#what-stays-unproven).
 
 `apps/desktop/src-tauri/tauri.conf.json`:
 
-- `productName: "Gentle Shell"` — becomes the app name (`Gentle Shell.app`, `gentle-shell` package name,
-  `Gentle Shell.exe`) and the default artefact file names;
-- window `title: "Gentle Shell"` — what the title bar of the single window shows;
+- `productName: "Gentle UI"` — becomes the app name (`Gentle UI.app`, `Gentle UI.exe`) and the default
+  artefact file names; the bundle identifier is deliberately left alone, so an existing install keeps its data;
+- window `title: "Gentle UI"` — what the title bar of the single window shows;
 - `identifier: "dev.gentleshell.desktopui"` — unchanged, so existing user data directories keep working;
 - `bundle.targets: "all"` — whatever the host can produce;
 - `bundle.icon` — the existing `icons/` set (`icon.icns` for macOS, `icon.ico` for Windows, the PNGs for
@@ -56,9 +56,9 @@ so the Cargo name never reaches the user.
 
 | Runner | Bundles | File names |
 | --- | --- | --- |
-| `ubuntu-latest` | `.AppImage`, `.deb` | `Gentle Shell_0.1.0_amd64.AppImage`, `gentle-shell_0.1.0_amd64.deb` |
-| `macos-14` | `.dmg` (arm64) | `Gentle Shell_0.1.0_aarch64.dmg` |
-| `windows-latest` | `.msi` | `Gentle Shell_0.1.0_x64_en-US.msi` |
+| `ubuntu-latest` | `.AppImage`, `.deb` | `Gentle UI_0.1.0_amd64.AppImage`, `gentle-ui_0.1.0_amd64.deb` |
+| `macos-latest` | `.dmg` (arm64) | `Gentle UI_0.1.0_aarch64.dmg` |
+| `windows-latest` | `.msi` | `Gentle UI_0.1.0_x64_en-US.msi` |
 
 `.deb` names are lowercased and dasherised by the Debian packager; everything else uses `productName`.
 Rust is never cross-compiled: each artefact comes from its own runner. Additional architectures are a
