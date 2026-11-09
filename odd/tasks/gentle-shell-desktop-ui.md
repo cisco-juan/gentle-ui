@@ -487,6 +487,17 @@ Observation while closing T20: `profiles.json` holds a profile literally named `
 `Claude-Grok`, `OnlyGrok` and `grok-opencode`. The UI renders it faithfully, so it is data, not a display bug — most
 likely created by an earlier session from a numeric parse. Left untouched: deleting a profile is the user's call.
 
+L19. 2026-11-09. `v0.1.0` is published, as the user authorized before the style work: "Gentle UI 0.1.0",
+https://github.com/cisco-juan/gentle-ui/releases/tag/v0.1.0, seven artifacts (`Gentle.UI_0.1.0_amd64.AppImage`
+148.5 MB, `_amd64.deb` 74.1 MB, `-0.1.0-1.x86_64.rpm` 74.5 MB, `_0.1.0_aarch64.dmg` 65.7 MB,
+`_aarch64.app.tar.gz` 64.8 MB, `_0.1.0_x64_en-US.msi` 66.7 MB, `_0.1.0_x64-setup.exe` 37.7 MB) produced by run
+42626178021 on the renamed `develop`.
+Two decisions taken here and worth keeping: the seven stale `Gentle.Shell_*` assets the earlier runs left in the
+same draft were deleted before publishing — shipping both names would have handed out pre-rename binaries — and
+`main` was fast-forwarded to `develop` (13 commits) so the default branch holds exactly what the release ships.
+Still open: the bundle identifier, the `okhsl()` built-in themes, T9 phase two, T40, and the settings session's
+uncommitted work in the main tree.
+
 L18. 2026-11-08. The user reported the Review panel turning red on its own: "arreglar este bug", with a
 screenshot showing the provider's own message about a candidate with no pending changes and the
 `empty_candidate_base_ref_required` transition. Queued as T39. The bridge half is written first because it
