@@ -1,21 +1,22 @@
-import { For, Show, createSignal, type JSX } from "solid-js";
+import { For, Show, createSignal, type Accessor, type JSX } from "solid-js";
 import type { ReviewConsent, ReviewStatusView } from "@gentle-shell/protocol";
 import "../review.css";
-import { describeReviewTransition } from "../lib/review-transition";
+import { describeReviewTransition, reviewerLens } from "../lib/review-transition";
 import { COMMITTED_BASE_REF } from "../lib/review-pending";
-import { modeLabel, modeTone, type ReviewPanel } from "../state/review";
+import { modeLabel, modeTone, type LensRunView, type ReviewPanel } from "../state/review";
 import { SkeletonLines } from "./Skeleton";
 
 /**
- * Native review (receipt-driven development), observation half of phase two.
+ * Native review (receipt-driven development), panel half of phase two.
  *
- * The tab observes what the provider says and starts a review with the tokens the provider itself
- * offered. It names the capture verbs a collect transition implies and says plainly that the
- * reviewer step behind them is not implemented here; it runs none of them. Every block below is
- * rendered from the bridge's typed answer, so a missing binary, a CLI error, or an unreadable answer
- * appears as exactly that with a refresh beside it — never as a plausible review state.
+ * The tab observes what the provider says, starts a review with the tokens the provider itself
+ * offered, and runs one reviewer lens: the provider's own context for that lens, one sessionless
+ * reviewer on the thread's current model, then the provider's own dry run of the answer. A dry run
+ * admits nothing, so the panel says so plainly and never reports it as an approved review. Every
+ * block below is rendered from the bridge's typed answer, so a missing binary, a CLI error, or an
+ * unreadable answer appears as exactly that with a refresh beside it — never as a plausible state.
  */
-export function ReviewTab(props: { review: ReviewPanel }): JSX.Element {
+export function ReviewTab(props: { review: ReviewPanel; model: Accessor<string> }): JSX.Element {
 	const view = () => props.review.view();
 	const status = () => view().status;
 
@@ -69,7 +70,7 @@ export function ReviewTab(props: { review: ReviewPanel }): JSX.Element {
 							<AuthorityBlock status={answered()} />
 							<AssessmentBlock panel={props.review} />
 							<TargetBlock status={answered()} />
-							<TransitionBlock panel={props.review} status={answered()} />
+							<TransitionBlock panel={props.review} model={props.model} status={answered()} />
 							<p class="review-note">
 								Abandon, recover, reclaim, quarantine, reconcile and repair need a maintainer's authorized command. This
 								panel does not run them.
@@ -257,8 +258,15 @@ function TargetBlock(props: { status: ReviewStatusView }): JSX.Element {
 }
 
 /** The provider's next transition, described by the pure module and never invented here. */
-function TransitionBlock(props: { panel: ReviewPanel; status: ReviewStatusView }): JSX.Element {
+function TransitionBlock(props: { panel: ReviewPanel; model: Accessor<string>; status: ReviewStatusView }): JSX.Element {
 	const step = () => describeReviewTransition(props.status.transition);
+	// The one lens this transition asks the panel to run, or nothing the panel can run.
+	const runnable = () => {
+		const lens = reviewerLens(props.status.transition);
+		return lens === null || lens.lens.length === 0 ? null : lens;
+	};
+	const run = () => props.panel.lensRun();
+	const running = () => run().step === "context" || run().step === "reviewer" || run().step === "capture";
 
 	return (
 		<section class="review-block">
@@ -288,28 +296,122 @@ function TransitionBlock(props: { panel: ReviewPanel; status: ReviewStatusView }
 				</p>
 			</Show>
 
-			{/* A collect names the provider's own verbs. When the panel already offers the choice above, the
-			    copy says so instead of calling it a reviewer step this panel lacks. */}
+			{/* A collect the panel answers above is that choice, and nothing else is needed here. */}
 			<Show when={step().kind === "collect" && step().satisfiedAbove}>
 				<p class="inspector-empty">This step is the choice offered above; nothing else is needed here.</p>
 			</Show>
+
+			{/* A reviewer collect is runnable now: one lens, its context, one reviewer, the provider's dry run. */}
 			<Show when={step().kind === "collect" && !step().satisfiedAbove}>
 				<Show
-					when={step().verbs.length > 0}
+					when={runnable()}
 					fallback={
-						<p class="inspector-empty">
-							The provider named no capture verb for this step, so this panel has none to show.
-						</p>
+						<Show
+							when={step().verbs.length > 0}
+							fallback={
+								<p class="inspector-empty">
+									The provider named no capture verb for this step, so this panel has nothing to run.
+								</p>
+							}
+						>
+							<p class="review-warning">
+								The provider named <span class="mono">{step().verbs.join(", ")}</span> for this step, but not the
+								lens it belongs to, so there is nothing this panel can run. Refresh to ask it again.
+							</p>
+						</Show>
 					}
 				>
-					<p class="review-warning">
-						Running this needs the reviewer step this panel does not implement yet. The provider's own capture
-						verb{step().verbs.length === 1 ? "" : "s"}:{" "}
-						<span class="mono">{step().verbs.join(", ")}</span>.{" "}
-					</p>
+					{(lens) => (
+						<>
+							<dl class="review-rows">
+								<Row label="lens" value={lens().lens} mono />
+							</dl>
+							<button
+								type="button"
+								class="review-primary"
+								disabled={running() || props.panel.busy()}
+								onClick={() => void props.panel.runLens(props.model())}
+							>
+								{running() ? "running…" : "run this lens"}
+							</button>
+							<p class="review-note">
+								Runs the provider's own context for this lens, then one sessionless reviewer on{" "}
+								<span class="mono">{props.model() || "the selected model"}</span>, then the provider's dry run of
+								the answer. The dry run admits nothing: no review is captured or approved by this action.
+							</p>
+							<LensRunReport run={run()} />
+						</>
+					)}
 				</Show>
 			</Show>
 		</section>
+	);
+}
+
+/** The step a run is on, in the provider's own words, so no progress is implied that did not happen. */
+function stepLabel(run: LensRunView): string {
+	switch (run.step) {
+		case "context":
+			return "running the provider's lens context…";
+		case "reviewer":
+			return "running one sessionless reviewer…";
+		case "capture":
+			return "submitting to the provider's dry run…";
+		case "done":
+			return "dry run answered";
+		case "failed":
+			return run.failedStep === null ? "stopped before the first step" : `stopped at ${run.failedStep}`;
+		default:
+			return "";
+	}
+}
+
+/**
+ * What one lens run has actually produced: its step, the reviewer's text, and the provider's dry run.
+ *
+ * The dry-run answer is relayed verbatim and labelled as a dry run wherever it appears: it is the
+ * provider proving a submission, not the provider admitting one.
+ */
+function LensRunReport(props: { run: LensRunView }): JSX.Element {
+	return (
+		<Show when={props.run.step !== "idle"}>
+			<div class="review-run">
+				<p classList={{ "review-step": true, failed: props.run.step === "failed" }}>{stepLabel(props.run)}</p>
+				<Show when={props.run.error}>{(error) => <Clamped text={error()} />}</Show>
+
+				<Show when={props.run.reviewer}>
+					{(reviewer) => (
+						<>
+							<div class="review-run-head">
+								<span class="review-title">reviewer</span>
+								<Show when={reviewer().truncated}>
+									<span class="tag-stage" title="The bridge capped this run's text, so this is not the whole answer.">
+										truncated
+									</span>
+								</Show>
+								<Show when={reviewer().exitCode !== 0}>
+									<span class="tag-stage">exit {reviewer().exitCode}</span>
+								</Show>
+							</div>
+							<pre class="review-raw reviewer">{reviewer().text}</pre>
+						</>
+					)}
+				</Show>
+
+				<Show when={props.run.capture}>
+					{(capture) => (
+						<div class="review-dryrun">
+							<div class="review-run-head">
+								<span class="review-title">dry run</span>
+								<span class="tag-stage">nothing captured, nothing approved</span>
+							</div>
+							<p class="review-note">The provider's own answer to the dry run, exactly as it wrote it:</p>
+							<pre class="review-raw">{capture().output}</pre>
+						</div>
+					)}
+				</Show>
+			</div>
+		</Show>
 	);
 }
 

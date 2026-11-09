@@ -1940,3 +1940,63 @@ button:focus-visible,
 	font-size: 12.5px;
 	line-height: 1.6;
 }
+
+/* ---------- a reviewer lens run (native review panel) ---------- */
+
+/* The run is the record of the transition that produced it, so it sits one tone below the panel's
+ * own blocks instead of reading as another section of them. */
+.review-run {
+	margin-top: 8px;
+	padding: 7px 8px;
+	border-radius: 8px;
+	background: var(--surface);
+}
+
+.review-run > * + * {
+	margin-top: 6px;
+}
+
+/* Which step is running, in the provider's own vocabulary: never a step that has not run. */
+.review-step {
+	margin: 0;
+	font-family: var(--mono);
+	font-size: 10px;
+	line-height: 1.4;
+	letter-spacing: 0.3px;
+	color: var(--text-soft);
+}
+
+.review-step.failed {
+	color: var(--warn);
+}
+
+.review-run-head {
+	display: flex;
+	align-items: baseline;
+	gap: 6px;
+}
+
+.review-run-head .review-title {
+	flex: 1 1 auto;
+	min-width: 0;
+	margin: 0;
+}
+
+/* A reviewer explains itself at length: enough lines to judge the answer, not the whole essay. */
+.review-raw.reviewer {
+	max-height: 132px;
+}
+
+/* The dry run is the provider proving a submission, never admitting one: the tone says which. */
+.review-dryrun {
+	padding-top: 6px;
+	border-top: 1px solid var(--surface-2);
+}
+
+.review-dryrun > * + * {
+	margin-top: 6px;
+}
+
+.review-dryrun .review-title {
+	color: var(--accent);
+}

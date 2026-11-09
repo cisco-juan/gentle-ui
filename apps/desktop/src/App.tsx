@@ -332,7 +332,8 @@ export default function App() {
 				onResize={(width) => layout.resizeInspector(width)}
 				onReset={() => layout.reset()}
 			/>
-			<Inspector chat={chat} onClose={() => layout.toggleInspector()} />
+			{/* The thread's model travels with the panel: a reviewer runs on the model current at the click. */}
+			<Inspector chat={chat} model={chat.model} onClose={() => layout.toggleInspector()} />
 
 			<Palette open={palette() !== null} onClose={closePalette} groups={groups()} />
 
