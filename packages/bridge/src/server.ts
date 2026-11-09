@@ -43,6 +43,7 @@ import {
 	reviewStatus,
 	type ReviewOptions,
 } from "./review.ts";
+import { runReviewer, type ReviewerOptions } from "./reviewer.ts";
 import { listSessions } from "./sessions.ts";
 import { settingsRead, type SettingsOptions } from "./settings.ts";
 import { settingsWriteApply, settingsWritePreview, type SettingsWriteOptions } from "./settings-write.ts";
@@ -66,6 +67,11 @@ export interface BridgeServerOptions {
 	 * review family at a fake one; a packaged bridge leaves it undefined and discovery decides.
 	 */
 	readonly review?: ReviewOptions;
+	/**
+	 * How a reviewer run is started. It is a `pi` process of its own, so this is how a test points the
+	 * reviewer at a fake executable; a packaged bridge leaves it undefined and `pi` is found on PATH.
+	 */
+	readonly reviewer?: ReviewerOptions;
 	/** Engram options, for the same reason: a test points the memory family at a fake MCP server. */
 	readonly memory?: MemoryOptions;
 	/** Where profiles live and which gentle-pi reads them; a test points this at a scratch config home. */
@@ -466,6 +472,21 @@ export async function startBridgeServer(options: BridgeServerOptions = {}): Prom
 				id: message.id,
 				action: "acknowledge",
 				data: await reviewAcknowledge(workspace, message.tokens, reviewOptions),
+			});
+			return;
+		}
+		// The one verb that is not the provider: a throwaway reviewer process in this workspace, told
+		// only what the panel relayed. An empty model or a timed-out run leaves here as the error
+		// envelope, so the panel never reads silence as a verdict.
+		if (message.action === "reviewer-run") {
+			send(socket, {
+				kind: "review",
+				id: message.id,
+				action: "reviewer-run",
+				data: await runReviewer(
+					{ model: message.model, context: message.context },
+					{ ...(options.reviewer ?? {}), cwd: workspace },
+				),
 			});
 			return;
 		}

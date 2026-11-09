@@ -19,6 +19,7 @@ import type {
 	ReviewCaptureResultView,
 	ReviewLensContextView,
 	ReviewMode,
+	ReviewRunnerView,
 	ReviewStartView,
 	ReviewStatusView,
 	ServerMessage,
@@ -44,7 +45,8 @@ export type ReviewRequest =
 			readonly result: unknown;
 			readonly dryRun?: boolean;
 	  }
-	| { readonly action: "acknowledge"; readonly tokens: readonly string[] };
+	| { readonly action: "acknowledge"; readonly tokens: readonly string[] }
+	| { readonly action: "reviewer-run"; readonly model: string; readonly context: string };
 
 export type ReviewAnswer =
 	| ReviewStatusView
@@ -53,7 +55,8 @@ export type ReviewAnswer =
 	| ReviewStartView
 	| ReviewLensContextView
 	| ReviewCaptureResultView
-	| ReviewAcknowledgeView;
+	| ReviewAcknowledgeView
+	| ReviewRunnerView;
 
 /** What the Memory panel can ask for. Every one of these reads; none of them writes. */
 export type MemoryRequest =
@@ -238,6 +241,8 @@ export class BridgeClient {
 	}): Promise<ReviewCaptureResultView>;
 	/** Replay the provider's own `acknowledge-approved` continuation. */
 	review(request: { readonly action: "acknowledge"; readonly tokens: readonly string[] }): Promise<ReviewAcknowledgeView>;
+	/** One reviewer run in the bridge: a sessionless process, never a prompt in the open thread. */
+	review(request: { readonly action: "reviewer-run"; readonly model: string; readonly context: string }): Promise<ReviewRunnerView>;
 	review(request: ReviewRequest): Promise<ReviewAnswer> {
 		const id = this.#nextId();
 		if (request.action === "start") {
@@ -261,6 +266,17 @@ export class BridgeClient {
 		}
 		if (request.action === "acknowledge") {
 			return this.#request<ReviewAcknowledgeView>({ kind: "review", id, action: "acknowledge", tokens: request.tokens });
+		}
+		if (request.action === "reviewer-run") {
+			// Both fields are the run itself: a spread that forgets one starts the wrong reviewer on the
+			// wrong prompt, and only the user's credits can tell.
+			return this.#request<ReviewRunnerView>({
+				kind: "review",
+				id,
+				action: "reviewer-run",
+				model: request.model,
+				context: request.context,
+			});
 		}
 		if (request.action === "assess") {
 			// Both fields are optional and both must survive the trip: a spread the client forgets to

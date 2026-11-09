@@ -193,6 +193,26 @@ test("review assess forwards the base ref and the relayed untracked declaration"
 });
 
 /**
+ * The reviewer run's own wire payload.
+ *
+ * `model` and `context` are exactly what a spread can drop, and a run started on the wrong model
+ * spends the user's own credits: both are pinned whole, not just the action.
+ */
+test("review reviewer-run forwards the model and the lens context unchanged", async () => {
+	const { client, socket } = await opened();
+	const model = "openrouter/anthropic/claude-sonnet-4.5";
+	const context = "- LENS review-reliability\nRead `src/App.tsx` and report the findings.";
+	const waiting = client.review({ action: "reviewer-run", model, context });
+	const sent = JSON.parse(socket.sent[0] as string) as { id: string };
+
+	assert.deepEqual(sent, { kind: "review", id: sent.id, action: "reviewer-run", model, context });
+
+	const answer = { text: "verdict: no findings", exitCode: 0, durationMs: 1234, truncated: false };
+	socket.message({ kind: "review", id: sent.id, action: "reviewer-run", data: answer });
+	assert.deepEqual(await waiting, answer);
+});
+
+/**
  * The three verbs a reviewer collect hands out, pinned on the wire.
  *
  * The payload is the part a spread can silently drop — `review()` sent `{kind, id, action}` and

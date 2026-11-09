@@ -314,6 +314,20 @@ export interface ReviewCaptureResultView {
 	readonly output: string;
 }
 
+/**
+ * `review reviewer-run`: one throwaway reviewer process, answering what it printed.
+ *
+ * The run happens in the bridge, in its own sessionless process, so the user's open thread is neither
+ * prompted nor polluted. `exitCode` is non-zero when the run answered a failure, and `truncated` says
+ * `text` hit the bridge's cap; a run that timed out is an error, never an empty text.
+ */
+export interface ReviewRunnerView {
+	readonly text: string;
+	readonly exitCode: number;
+	readonly durationMs: number;
+	readonly truncated: boolean;
+}
+
 /** `review acknowledge-approved`: the provider's own continuation, replayed and relayed back whole. */
 export interface ReviewAcknowledgeView {
 	/** The provider's own acknowledged envelope, verbatim. */
@@ -1015,6 +1029,17 @@ export type ClientMessage =
 	  }
 	/** Replay the provider's own `acknowledge-approved` continuation, never composed here. */
 	| { readonly kind: "review"; readonly id: string; readonly action: "acknowledge"; readonly tokens: readonly string[] }
+	/**
+	 * One reviewer run, sessionless, in the bridge: `context` is the provider's lens context and `model`
+	 * the model the user selected. Both reach the run exactly as they arrive.
+	 */
+	| {
+			readonly kind: "review";
+			readonly id: string;
+			readonly action: "reviewer-run";
+			readonly model: string;
+			readonly context: string;
+	  }
 	/** Engram's memory for the bridge's workspace. Every action here reads; none of them writes. */
 	| { readonly kind: "memory"; readonly id: string; readonly action: "context" }
 	| {
@@ -1228,4 +1253,5 @@ export type ReviewResult =
 	| { readonly action: "consent"; readonly data: ReviewStartView }
 	| { readonly action: "lens-context"; readonly data: ReviewLensContextView }
 	| { readonly action: "capture-result"; readonly data: ReviewCaptureResultView }
-	| { readonly action: "acknowledge"; readonly data: ReviewAcknowledgeView };
+	| { readonly action: "acknowledge"; readonly data: ReviewAcknowledgeView }
+	| { readonly action: "reviewer-run"; readonly data: ReviewRunnerView };
