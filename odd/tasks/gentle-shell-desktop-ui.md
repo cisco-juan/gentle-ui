@@ -487,6 +487,14 @@ Observation while closing T20: `profiles.json` holds a profile literally named `
 `Claude-Grok`, `OnlyGrok` and `grok-opencode`. The UI renders it faithfully, so it is data, not a display bug — most
 likely created by an earlier session from a numeric parse. Left untouched: deleting a profile is the user's call.
 
+L21. 2026-11-09. A commit message lies about its own content and it will stay that way, deliberately. `4294e8b`
+is titled "docs(odd): record the silent field drop behind T39 and what it taught" and it also carries 344 lines of
+the okhsl theme work, because the parent ran `git add -A` while another writer was mid-edit. The code is green and
+correct — the focused appearance suite is 18/18 and the conversion is bit-identical to Pi's — but the history says
+"docs" where a feature landed. Rewriting a public branch to fix a message was judged worse than the mismatch, so it
+stays and is recorded here. Rule adopted for the rest of this work: stage explicit paths while a worker is editing,
+never `-A`.
+
 L20. 2026-11-09. T39 was reported as "the bridge forwards the base ref" and that was only half true, which is
 worth recording as a lesson rather than as a detail. The bridge did forward it — proven by a raw WebSocket probe
 against the running bridge — but the panel reaches the bridge through `BridgeClient.review()`, and that method sent
