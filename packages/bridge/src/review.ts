@@ -4,6 +4,7 @@ import { isAbsolute, join, resolve } from "node:path";
 import type {
 	ReviewAssessment,
 	ReviewAuthority,
+	ReviewCollectArgument,
 	ReviewCollectInput,
 	ReviewConsent,
 	ReviewConsentChoice,
@@ -747,7 +748,45 @@ function parseCollect(value: unknown): readonly ReviewCollectInput[] {
 		name: text(entry.name) ?? "",
 		schema: text(entry.schema) ?? "",
 		captureOperation: text(entry.capture_operation) ?? "",
+		arguments: parseCollectArguments(entry.arguments),
+		binding: parseCollectArguments(entry.artifact_subject),
 	}));
+}
+
+/**
+ * A collect slot's arguments or opaque binding, relayed whole.
+ *
+ * An argument with a `token` is the provider's flag rendering; one without is a selection value. A
+ * binding is a flat record of the provider's own fields. A malformed entry is dropped rather than
+ * guessed at, and a nested value has no name/value pair to carry, so it is left out too.
+ */
+function parseCollectArguments(value: unknown): readonly ReviewCollectArgument[] {
+	const source = Array.isArray(value) ? value : [value];
+	const relayed: ReviewCollectArgument[] = [];
+	for (const entry of source) {
+		const record = asRecord(entry);
+		if (record === null) continue;
+		const name = text(record.name);
+		if (name !== null) {
+			// A list of arguments: relay the provider's value and its own token, or drop the entry.
+			const argument = text(record.value) ?? scalarText(record.value);
+			if (argument !== null) relayed.push({ name, value: argument, token: text(record.token) });
+			continue;
+		}
+		// A binding is one flat record, not a list of arguments: relay each of its fields.
+		for (const [field, fieldValue] of Object.entries(record)) {
+			const fieldText = scalarText(fieldValue);
+			if (fieldText !== null) relayed.push({ name: field, value: fieldText, token: null });
+		}
+	}
+	return relayed;
+}
+
+/** A binding field that can be shown as text: strings and finite numbers only, never `[object Object]`. */
+function scalarText(value: unknown): string | null {
+	if (typeof value === "string") return text(value);
+	if (typeof value === "number" && Number.isFinite(value)) return String(value);
+	return null;
 }
 
 /** The six arguments the provider's intended-untracked selection binding must carry. */

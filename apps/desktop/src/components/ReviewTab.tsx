@@ -1,15 +1,17 @@
 import { For, Show, createSignal, type JSX } from "solid-js";
 import type { ReviewConsent, ReviewStatusView } from "@gentle-shell/protocol";
 import "../review.css";
+import { describeReviewTransition } from "../lib/review-transition";
 import { COMMITTED_BASE_REF } from "../lib/review-pending";
 import { modeLabel, modeTone, type ReviewPanel } from "../state/review";
 import { SkeletonLines } from "./Skeleton";
 
 /**
- * Native review (receipt-driven development), first phase.
+ * Native review (receipt-driven development), observation half of phase two.
  *
  * The tab observes what the provider says and starts a review with the tokens the provider itself
- * offered; it never captures lens results, and it never runs a maintenance verb. Every block below is
+ * offered. It names the capture verbs a collect transition implies and says plainly that the
+ * reviewer step behind them is not implemented here; it runs none of them. Every block below is
  * rendered from the bridge's typed answer, so a missing binary, a CLI error, or an unreadable answer
  * appears as exactly that with a refresh beside it — never as a plausible review state.
  */
@@ -254,58 +256,54 @@ function TargetBlock(props: { status: ReviewStatusView }): JSX.Element {
 	);
 }
 
-/** The provider's next transition, which is the only thing this panel acts on. */
+/** The provider's next transition, described by the pure module and never invented here. */
 function TransitionBlock(props: { panel: ReviewPanel; status: ReviewStatusView }): JSX.Element {
-	const transition = () => props.status.transition;
+	const step = () => describeReviewTransition(props.status.transition);
 
 	return (
 		<section class="review-block">
 			<h3 class="review-title">next transition</h3>
-			<Show
-				when={transition()}
-				fallback={<p class="inspector-empty">The provider offered no next transition.</p>}
-			>
-				{(step) => (
-					<>
-						<div class="review-transition">
-							<span class={`review-kind ${step().kind}`}>{step().kind}</span>
-							<span class="review-reason mono">{step().reasonCode}</span>
-						</div>
+			<Show when={step().kind !== "absent"}>
+				<div class="review-transition">
+					<span class={`review-kind ${step().kind}`}>{step().kind}</span>
+					<Show when={step().reasonCode}>{(reason) => <span class="review-reason mono">{reason()}</span>}</Show>
+				</div>
+			</Show>
+			<p classList={{ "review-warning": step().kind === "stop", "review-note": step().kind !== "stop" }}>
+				{step().summary}
+			</p>
 
-						<Show when={step().kind === "execute"}>
-							<button
-								type="button"
-								class="review-primary"
-								disabled={props.panel.busy()}
-								onClick={() => void props.panel.start()}
-							>
-								{props.panel.busy() ? "starting…" : "Start review"}
-							</button>
-							<p class="review-note">
-								Starts with this transition's own tokens and relays consent, so the provider always asks before it
-								reviews.
-							</p>
-						</Show>
+			<Show when={step().kind === "execute"}>
+				<button
+					type="button"
+					class="review-primary"
+					disabled={props.panel.busy()}
+					onClick={() => void props.panel.start()}
+				>
+					{props.panel.busy() ? "starting…" : "Start review"}
+				</button>
+				<p class="review-note">
+					Starts with this transition's own tokens and relays consent, so the provider always asks before it
+					reviews.
+				</p>
+			</Show>
 
-						<Show when={step().kind === "collect"}>
-							<p class="inspector-empty">
-								Waiting for{" "}
-								{step().collect.length === 0
-									? "reviewer results"
-									: step()
-											.collect.map((input) => input.name)
-											.join(", ")}
-								. Capturing them belongs to phase two, so this panel does not run it.
-							</p>
-						</Show>
-
-						<Show when={step().kind === "stop"}>
-							<p class="review-warning">
-								The provider stops here: <span class="mono">{step().reasonCode}</span>
-							</p>
-						</Show>
-					</>
-				)}
+			{/* A collect names the provider's own verbs; the reviewer step that would satisfy them is absent. */}
+			<Show when={step().kind === "collect"}>
+				<Show
+					when={step().verbs.length > 0}
+					fallback={
+						<p class="inspector-empty">
+							The provider named no capture verb for this step, so this panel has none to show.
+						</p>
+					}
+				>
+					<p class="review-warning">
+						Running this needs the reviewer step this panel does not implement yet. The provider's own capture
+						verb{step().verbs.length === 1 ? "" : "s"}:{" "}
+						<span class="mono">{step().verbs.join(", ")}</span>.{" "}
+					</p>
+				</Show>
 			</Show>
 		</section>
 	);

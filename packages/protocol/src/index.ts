@@ -167,11 +167,28 @@ export interface ReviewExecuteStep {
 	readonly targetIdentity: string | null;
 }
 
+/**
+ * One argument the provider rendered for a capture step.
+ *
+ * `token` is the provider's own flag rendering when it offered one; a selection argument carries the
+ * value under a name and no token. Both are relayed verbatim, because a rewritten one names an
+ * operation the provider never offered.
+ */
+export interface ReviewCollectArgument {
+	readonly name: string;
+	readonly value: string;
+	readonly token: string | null;
+}
+
 /** One artefact an `collect` transition is waiting for; capturing it belongs to a later phase. */
 export interface ReviewCollectInput {
 	readonly name: string;
 	readonly schema: string;
 	readonly captureOperation: string;
+	/** The provider's own arguments for the capture; empty when it named none. */
+	readonly arguments: readonly ReviewCollectArgument[];
+	/** The opaque binding the provider attached to the capture, flattened to its own fields. */
+	readonly binding: readonly ReviewCollectArgument[];
 }
 
 export interface ReviewTransition {

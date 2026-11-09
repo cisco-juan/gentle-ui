@@ -227,6 +227,35 @@ test("status keeps a collect transition, whose captures belong to phase two", as
 		["review.capture-result"],
 	);
 	assert.equal(view.transition?.collect[0]?.name, "reviewer_result");
+	// The provider's own arguments, verbatim: the slot's capture needs them and this panel drops none.
+	assert.deepEqual(view.transition?.collect[0]?.arguments, [
+		{ name: "lineage", value: "review-b005087be055cc9b", token: "--lineage=review-b005087be055cc9b" },
+		{
+			name: "expected-revision",
+			value: "sha256:c7406e7ddfdd8489dbc13bef583dc3ead249b2ab55aa12c66296bb1e11112852",
+			token: "--expected-revision=sha256:c7406e7ddfdd8489dbc13bef583dc3ead249b2ab55aa12c66296bb1e11112852",
+		},
+		{
+			name: "target",
+			value: "sha256:0db81e730faea096ad63689d6b061ab6385a82b96ee837a2ed50cfb07c0b9eaf",
+			token: "--target=sha256:0db81e730faea096ad63689d6b061ab6385a82b96ee837a2ed50cfb07c0b9eaf",
+		},
+		{ name: "lens", value: "review-reliability", token: "--lens=review-reliability" },
+		{ name: "order", value: "0", token: "--order=0" },
+	]);
+	// The opaque binding rides along as its own fields; a number is shown as the provider wrote it.
+	const binding = view.transition?.collect[0]?.binding ?? [];
+	assert.equal(binding.length, 9);
+	assert.deepEqual(binding.find((entry) => entry.name === "lens"), {
+		name: "lens",
+		value: "review-reliability",
+		token: null,
+	});
+	assert.deepEqual(binding.find((entry) => entry.name === "selected_order"), {
+		name: "selected_order",
+		value: "0",
+		token: null,
+	});
 });
 
 test("status keeps a stop transition and its reason code verbatim", async (t) => {
@@ -323,6 +352,13 @@ test("status relays the provider's own untracked selection as assess tokens", as
 	const view = await reviewStatus(root, { binary: cli.binary });
 
 	assert.equal(view.transition?.reasonCode, "intended_untracked_selection_required");
+	// A selection argument carries a name and a value and no token; that shape is kept as it is.
+	assert.deepEqual(view.transition?.collect[0]?.arguments.slice(0, 2), [
+		{ name: "target_identity", value: "sha256:7eca20bca7ed7bc3be1455aec351ca8b6817272fb48d95771aa7936a6efd1720", token: null },
+		{ name: "projection", value: "workspace", token: null },
+	]);
+	assert.equal(view.transition?.collect[0]?.arguments.length, 6);
+	assert.deepEqual(view.transition?.collect[0]?.binding, []);
 	assert.deepEqual(view.untracked, {
 		inventory: UNTRACKED_INVENTORY,
 		paths: ["apps/desktop/src/new.ts", "docs/notes.md"],
