@@ -237,7 +237,7 @@ T36 [x] Closing the left sidebar shrinks it to an icon rail instead of removing 
     keep a name through `aria-label` plus a tooltip. The toggle is reachable in both states and dragging the
     divider out expands the rail. The old `railOpen: false` state migrates to collapsed. Verified in the app:
     268 -> 56 -> 268.
-T39 [ ] The Review panel must not report a provider error as its own state when the real answer is "there is
+T39 [x] The Review panel must not report a provider error as its own state when the real answer is "there is
     nothing uncommitted to assess". S1 S10
     Reproduced from a screenshot of the panel: `review assess failed (exit 1): Error: the review assess
     candidate has no pending changes; already-committed work can be assessed by rerunning
@@ -247,6 +247,15 @@ T39 [ ] The Review panel must not report a provider error as its own state when 
     Fix: the bridge forwards an optional `--base-ref` (refusing anything that could be read as another flag),
     the panel recognises this answer as "nothing pending" instead of an error, and offers the committed
     assessment it can actually run — the previous commit as the base — with the same read-only guarantees.
+    Landed in two commits (`ae5cf32`, `fc6b6b8`). `isNothingPendingError` has three tests with RED observed by
+    removing the module and running them again; the classifier matches the provider's sentence verbatim, which
+    is the one this report quoted. Verified live against the running bridge: a base ref is forwarded, and
+    `--cwd` as a ref is refused with the panel's own message instead of reaching the provider's argv.
+    Not seen on screen: the browser extension had disconnected, so the panel branch is typechecked and
+    unit-supported but not photographed. Second condition found while probing, deliberately not folded in:
+    an **untracked** file anywhere in the clone makes the provider refuse even with a base ref
+    ("untracked files require an explicit declaration"), which is an honest precondition the panel shows as an
+    error; offering the declaration is a separate task.
 
 T38 [ ] The rose honours the harness's own `banner.json` and `animations.json` at runtime (shown/hidden, colour,
     policy), which needs one read the webview cannot make by itself. S22
