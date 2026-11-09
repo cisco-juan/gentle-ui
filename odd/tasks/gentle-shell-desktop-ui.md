@@ -251,11 +251,20 @@ T39 [x] The Review panel must not report a provider error as its own state when 
     removing the module and running them again; the classifier matches the provider's sentence verbatim, which
     is the one this report quoted. Verified live against the running bridge: a base ref is forwarded, and
     `--cwd` as a ref is refused with the panel's own message instead of reaching the provider's argv.
-    Not seen on screen: the browser extension had disconnected, so the panel branch is typechecked and
-    unit-supported but not photographed. Second condition found while probing, deliberately not folded in:
-    an **untracked** file anywhere in the clone makes the provider refuse even with a base ref
-    ("untracked files require an explicit declaration"), which is an honest precondition the panel shows as an
-    error; offering the declaration is a separate task.
+    Seen on screen once the browser came back: the RISK block reads "Nothing is uncommitted, so there are no
+    pending changes to assess. The last commit can be assessed against its parent." with the action beside it,
+    and no `.inspector-error` anywhere in the panel.
+    Not seen: the action's own result. Probing the running bridge with four bases (`HEAD~1`, `HEAD^`, `main`,
+    and none) shows the provider answering **every** one of them with
+    "untracked files require an explicit declaration" while the tree holds untracked files — which is the case
+    whenever another writer is mid-edit. So the button's success path cannot be observed on a dirty tree, and
+    on a clean one it still has to be re-probed.
+
+T40 [ ] The Review panel must offer the untracked-file declaration. S1 S10
+    Found while probing T39: an untracked file anywhere in the clone makes the provider refuse an assessment
+    **even with a base ref**, so "assess the last commit" cannot succeed while one exists. The provider names the
+    command in its message; the panel should offer it as the action it already does for a clean tree, instead of
+    printing the refusal. This is a prerequisite of T39's button working, not a nice-to-have.
 
 T38 [ ] The rose honours the harness's own `banner.json` and `animations.json` at runtime (shown/hidden, colour,
     policy), which needs one read the webview cannot make by itself. S22
