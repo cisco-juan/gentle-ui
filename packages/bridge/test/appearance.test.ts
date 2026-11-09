@@ -117,8 +117,8 @@ test("a theme that leaves an optional colour out keeps every one it has", () => 
 	const partial = { name: "Sparse", colors: { text: "#ABCDEF", accent: "missingVar" } };
 	const theme = resolveTheme(partial, ["Sparse"]);
 	assert.equal(theme?.tokens["text"], "#ABCDEF");
-	// Pi resolves an unknown reference to itself; a value a webview cannot paint is dropped later.
-	assert.equal(theme?.tokens["accent"], "missingVar");
+	// Pi resolves an unknown reference to itself, and a webview cannot paint that name: it is dropped.
+	assert.equal(theme?.tokens["accent"], undefined);
 	for (const absent of ["selectedBg", "pageBg", "cardBg", "warning"]) assert.equal(theme?.tokens[absent], undefined);
 });
 
@@ -129,6 +129,114 @@ test("an unknown, unnamed or colourless document is not a theme", () => {
 	assert.equal(resolveTheme({ name: "X" }, ["X"]), null);
 	assert.equal(resolveTheme({ name: "X", colors: {} }, ["X"]), null);
 	assert.equal(resolveTheme({ name: "a/b", colors: { text: "#FFF" } }, ["a/b"]), null);
+});
+
+// ---- Pi's own colours, written in a notation CSS does not have ----
+
+/** Pi's built-in `dark`, cut down to the tokens a web UI reads. Every colour is `okhsl()`. */
+const PI_DARK = {
+	name: "dark",
+	vars: {
+		text: "okhsl(234 3% 89%)",
+		muted: "okhsl(229 6% 67%)",
+		violet: "okhsl(295 50% 67%)",
+		blueBg: "okhsl(233 41% 24%)",
+	},
+	colors: {
+		text: "text",
+		muted: "muted",
+		accent: "violet",
+		selectedBg: "blueBg",
+		borderMuted: "okhsl(229 8% 53%)",
+	},
+	export: { pageBg: "okhsl(262 14% 16%)", cardBg: "okhsl(264 13% 19%)" },
+};
+
+/** Pi's built-in `light`, the same way. */
+const PI_LIGHT = {
+	name: "light",
+	vars: {
+		text: "okhsl(225 5% 27%)",
+		muted: "okhsl(229 8% 47%)",
+		violet: "okhsl(295 60% 46%)",
+		blueBg: "okhsl(235 19% 91%)",
+	},
+	colors: {
+		text: "text",
+		muted: "muted",
+		accent: "violet",
+		selectedBg: "blueBg",
+		borderMuted: "okhsl(235 7% 66%)",
+		dim: "okhsl(229 7% 59%)",
+	},
+	export: { pageBg: "okhsl(17 3% 94%)", cardBg: "okhsl(17 5% 97%)" },
+};
+
+test("the built-in dark theme's okhsl colours arrive as the hex Pi itself paints", () => {
+	const theme = resolveTheme(PI_DARK, ["dark"]);
+	// The expected values are what Pi's own colour maths renders for these exact `okhsl()` strings.
+	assert.equal(theme?.tokens["text"], "#dee0e1");
+	assert.equal(theme?.tokens["muted"], "#9da5a9");
+	assert.equal(theme?.tokens["accent"], "#a798d7");
+	assert.equal(theme?.tokens["selectedBg"], "#213b49");
+	assert.equal(theme?.tokens["borderMuted"], "#768186");
+	assert.equal(theme?.tokens["pageBg"], "#21252c");
+	assert.equal(theme?.tokens["cardBg"], "#282c34");
+});
+
+test("the built-in light theme's okhsl colours arrive as the hex Pi itself paints", () => {
+	const theme = resolveTheme(PI_LIGHT, ["light"]);
+	assert.equal(theme?.tokens["text"], "#3b3f41");
+	assert.equal(theme?.tokens["muted"], "#677176");
+	assert.equal(theme?.tokens["accent"], "#7459b4");
+	assert.equal(theme?.tokens["selectedBg"], "#dfe7ec");
+	assert.equal(theme?.tokens["borderMuted"], "#9aa2a7");
+	assert.equal(theme?.tokens["dim"], "#879095");
+	assert.equal(theme?.tokens["pageBg"], "#efeeee");
+	assert.equal(theme?.tokens["cardBg"], "#f7f6f6");
+});
+
+test("an okhsl value reached through vars is converted once, and the hex it becomes stays put", () => {
+	const chained = { name: "Chained", vars: { fg: "text", text: "okhsl(295 50% 67%)" }, colors: { text: "fg", accent: "text" } };
+	const theme = resolveTheme(chained, ["Chained"]);
+	// Two references, one conversion: the same colour arrives twice, as the same hex.
+	assert.equal(theme?.tokens["text"], "#a798d7");
+	assert.equal(theme?.tokens["accent"], "#a798d7");
+	// A second pass over the hex changes nothing, which is what `converted once` has to mean.
+	const again = { name: "Chained", colors: { text: theme?.tokens["text"] } };
+	assert.equal(resolveTheme(again, ["Chained"])?.tokens["text"], "#a798d7");
+});
+
+test("a value no webview can paint is dropped, and a theme left with none is not a theme", () => {
+	const odd = {
+		name: "Odd",
+		colors: { text: "#ABCDEF", accent: "missingVar", warning: "not-a-colour", error: "okhsl(234 3 89)" },
+	};
+	const theme = resolveTheme(odd, ["Odd"]);
+	assert.equal(theme?.tokens["text"], "#ABCDEF");
+	// An unresolved variable name, a misspelling, and an `okhsl()` whose saturation is out of range (Pi
+	// rejects it too) are all values CSS cannot paint: dropped, never passed on as they stand.
+	for (const absent of ["accent", "warning", "error"]) assert.equal(theme?.tokens[absent], undefined);
+	assert.equal(resolveTheme({ name: "Odd", colors: { text: "missingVar" } }, ["Odd"]), null);
+});
+
+test("a hex value is carried through exactly as it was written", () => {
+	const hexed = { name: "Hexed", colors: { text: "#ABC", muted: "#abcd", dim: "#AABBCC", accent: "#aabbccdd" } };
+	assert.deepEqual(resolveTheme(hexed, ["Hexed"])?.tokens, { text: "#ABC", muted: "#abcd", dim: "#AABBCC", accent: "#aabbccdd" });
+});
+
+test("alpha carried by an okhsl value becomes the hex alpha channel", () => {
+	const faded = { name: "Faded", colors: { text: "okhsl(234 3% 89% / 50%)", muted: "okhsl(234 3% 89% / 0.5)" } };
+	const theme = resolveTheme(faded, ["Faded"]);
+	assert.equal(theme?.tokens["text"], "#dee0e180");
+	assert.equal(theme?.tokens["muted"], "#dee0e180");
+});
+
+test("a colour CSS already paints as it stands is carried through untouched", () => {
+	const modern = { name: "Modern", colors: { text: "oklch(0.7 0.1 260)", accent: "rgb(1 2 3)" } };
+	const theme = resolveTheme(modern, ["Modern"]);
+	assert.equal(theme?.tokens["text"], "oklch(0.7 0.1 260)");
+	assert.equal(theme?.tokens["accent"], "rgb(1 2 3)");
 });
 
 // ---- the catalog ----

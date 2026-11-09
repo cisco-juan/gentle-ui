@@ -487,6 +487,17 @@ Observation while closing T20: `profiles.json` holds a profile literally named `
 `Claude-Grok`, `OnlyGrok` and `grok-opencode`. The UI renders it faithfully, so it is data, not a display bug — most
 likely created by an earlier session from a numeric parse. Left untouched: deleting a profile is the user's call.
 
+L20. 2026-11-09. T39 was reported as "the bridge forwards the base ref" and that was only half true, which is
+worth recording as a lesson rather than as a detail. The bridge did forward it — proven by a raw WebSocket probe
+against the running bridge — but the panel reaches the bridge through `BridgeClient.review()`, and that method sent
+`{kind, id, action}` and dropped every other field, so the panel's "assess the last commit" never carried a base. A
+probe that bypasses the real client proves the far end and says nothing about the near end.
+Found by the worker assigned to T40, which refused to build on a path that could not reach the bridge and asked for
+the surface instead of inventing one. `apps/desktop/src/lib/bridge.ts` and its test are now in that task's scope: the
+assess overload forwards `baseRef` and the relayed untracked declaration, pinned by a test on the wire payload, and
+the same class of silent drop is now covered for `assess`. Lesson for the rest of this work: verify through the
+path the UI actually uses, and treat a missing test on that path as a finding, not as an absence.
+
 L19. 2026-11-09. `v0.1.0` is published, as the user authorized before the style work: "Gentle UI 0.1.0",
 https://github.com/cisco-juan/gentle-ui/releases/tag/v0.1.0, seven artifacts (`Gentle.UI_0.1.0_amd64.AppImage`
 148.5 MB, `_amd64.deb` 74.1 MB, `-0.1.0-1.x86_64.rpm` 74.5 MB, `_0.1.0_aarch64.dmg` 65.7 MB,
