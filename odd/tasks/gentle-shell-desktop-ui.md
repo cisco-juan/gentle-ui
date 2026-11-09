@@ -5,7 +5,7 @@ pinned npm dependencies (`@earendil-works/pi-coding-agent`, `gentle-pi`), never 
 releases flow in as version bumps. The UI is a Tauri v2 shell (system webview) around a Vite frontend,
 with a Node bridge that drives the `pi` agent process.
 
-Status: every task is done except T9 phase two. Bridge speaks to `pi --mode rpc` over a
+Status: every task is done except T9 phase two and the review-declaration follow-ups (T40). Bridge speaks to `pi --mode rpc` over a
 tokenised loopback WebSocket and re-answers extension dialogs; 216 bridge and 163 desktop tests green, and native
 assess of `e6eeb76..HEAD` reads medium and under budget, so no review is due. See `docs/architecture.md`.
 
@@ -266,12 +266,26 @@ T40 [ ] The Review panel must offer the untracked-file declaration. S1 S10
     command in its message; the panel should offer it as the action it already does for a clean tree, instead of
     printing the refusal. This is a prerequisite of T39's button working, not a nice-to-have.
 
-T38 [ ] The rose honours the harness's own `banner.json` and `animations.json` at runtime (shown/hidden, colour,
+T38 [x] The rose honours the harness's own `banner.json` and `animations.json` at runtime (shown/hidden, colour,
     policy), which needs one read the webview cannot make by itself. S22
-    Deliberately split from T34 so the art landing did not wait on a new wire family.
+    Deliberately split from T34 so the art landing did not wait on a new wire family. The bridge answers
+    `banner.json` and `animations.json` as text and the UI parses them with the rules `rose.ts` already had, so
+    there is one parser and not two; on this machine `banner.json` is absent, so the documented defaults apply and
+    `animations.json` reports `policy: quality`, which is what the app draws.
 
-T37 [ ] Themes come from Gentle Shell's configuration: the UI reads the selected theme and follows it, and a
+T37 [x] Themes come from Gentle Shell's configuration: the UI reads the selected theme and follows it, and a
     change of theme there changes the UI. S25
+    The bridge reads the catalog from the three places themes live (Pi's built-ins, gentle-pi's package themes,
+    the user's own directory), resolves the selected theme's `colors` against its `vars`, and answers the token
+    map; the desktop overrides this app's own CSS variables with it and restores them when nothing resolves.
+    Choosing a theme writes only the `theme` key of `settings.json`, atomically, after backing the previous bytes
+    up, and refuses any name it did not just read in the catalog.
+    Verified in the app: `--bg #060407`, `--surface #100A0F`, `--text #F6EFF3`, `--accent #F43888` — the user's own
+    `Gentleman-Sexy`, not the app's old palette — and the Settings sheet lists the six real names with the current
+    one marked. 17 tests, RED first.
+    Known limit, recorded instead of hidden: Pi's built-in `dark` and `light` are written in `okhsl()`, which CSS
+    cannot paint, so their tokens are dropped and the app's defaults stand for those; the harness's own themes are
+    hex and apply fully. A conversion on the bridge would fix it and is not part of this pass.
 
 ## Log
 
