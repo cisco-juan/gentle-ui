@@ -268,6 +268,22 @@ T39 [x] The Review panel must not report a provider error as its own state when 
     `baseRef: "HEAD~1"` answers a real assessment (`kind=base-diff`), where the bare call answers the
     nothing-pending message. Reaching that took fixing the client too — see T40 and L20.
 
+T41 [ ] The Review panel runs a lens: fetch the provider's own lens context, run the reviewer, and submit the
+    result. S1
+    Contract read from the provider, not guessed: `review lens-context` emits "the finished reviewer lens context
+    for one selected lens" and states that "every token is carried verbatim by the collect transition; nothing else
+    is accepted, and nothing is left for the caller to assemble". The submission shape is pinned by
+    `review schema capture-result-dry-run` (`schema: gentle-ai.review-capture-result-dry-run/v1`,
+    `operation: review/capture-result`, `lineage_id`, `lens`, `selected_order`, `subject_hash`,
+    `admission_decision`, `validation`). The reviewer's model is the thread's current model unless the user
+    changes it here, and every submission is proven with the provider's dry run before it is admitted for real.
+
+T42 [ ] Acknowledgement from the panel, behind an explicit confirmation. S1
+    Decision (user, 2026-11-09): "si, ambas" — the lenses run from the UI and the acknowledgement may be given
+    from the UI too, with the same explicit-confirmation pattern already used for permissions and for writing
+    `settings.json`. `acknowledge-approved` remains the provider's own continuation, replayed verbatim; the panel
+    never composes it.
+
 T40 [x] The Review panel must offer the untracked-file declaration. S1 S10
     Found while probing T39: an untracked file anywhere in the clone makes the provider refuse an assessment
     **even with a base ref**, so "assess the last commit" cannot succeed while one exists. The provider names the
@@ -504,6 +520,12 @@ T28 [x] A thread opens showing the oldest row of its first page for a moment bef
 Observation while closing T20: `profiles.json` holds a profile literally named `NaN`, next to `current`,
 `Claude-Grok`, `OnlyGrok` and `grok-opencode`. The UI renders it faithfully, so it is data, not a display bug — most
 likely created by an earlier session from a numeric parse. Left untouched: deleting a profile is the user's call.
+
+L23. 2026-11-09. The user authorised both halves of phase two ("si, ambsa" for "sí, ambas"): lenses run from the
+UI, and the acknowledgement may be given there behind an explicit confirmation. The reviewer's model is taken to be
+the thread's current model — what the user already selected and pays for — and that choice is recorded here as a
+default they can change, not as a silent decision. Every capture is proven with the provider's own dry run before
+anything is admitted, so building the pipeline costs nothing until someone deliberately runs a real review.
 
 L22. 2026-11-09. T39 and T40 are closed by the same proof, and it is worth writing down what that proof is,
 because the earlier claim was wrong. In the running app, on a clean tree, the Review panel showed "Nothing is
