@@ -140,3 +140,54 @@ test("a permissions answer settles the request that asked for it", async () => {
 	socket.message({ kind: "permissions", id: sent.id, action: "status", data: { state: "ok", default: "normal" } });
 	assert.deepEqual(await waiting, { state: "ok", default: "normal" });
 });
+
+const ASSESSMENT = {
+	risk: "medium",
+	reasons: [],
+	changedPaths: 0,
+	changedLines: 0,
+	candidateKind: "current-changes",
+	candidateConsumed: false,
+	reviewDue: false,
+	reviewDueReason: "",
+};
+
+/**
+ * The assess wire payload, in all three shapes the panel can ask for.
+ *
+ * This class of drop is invisible without pinning the payload: the old client accepted `baseRef`
+ * through a spread and silently sent `{kind, id, action}` only, so T39's panel path never reached
+ * the bridge.
+ */
+test("review assess forwards the base ref and the relayed untracked declaration", async () => {
+	const declaration = [
+		"--untracked-scope=select",
+		"--expected-untracked-inventory=sha256:cc090fa97db9cb7239a0572b1c12c94ecb94fe5417ee421e78337b49f8484926",
+		"--intended-untracked=docs/notes.md",
+	];
+	const cases: readonly {
+		readonly request: { readonly action: "assess"; readonly baseRef?: string; readonly untracked?: readonly string[] };
+		readonly expected: Record<string, unknown>;
+	}[] = [
+		{ request: { action: "assess" }, expected: {} },
+		{ request: { action: "assess", baseRef: "HEAD~1" }, expected: { baseRef: "HEAD~1" } },
+		{ request: { action: "assess", untracked: declaration }, expected: { untracked: declaration } },
+		{ request: { action: "assess", baseRef: "HEAD~1", untracked: declaration }, expected: { baseRef: "HEAD~1", untracked: declaration } },
+	];
+
+	for (const { request, expected } of cases) {
+		const { client, socket } = await opened();
+		const waiting = client.review(request);
+		const sent = JSON.parse(socket.sent[0] as string) as { id: string };
+
+		assert.deepEqual(JSON.parse(socket.sent[0] as string), {
+			kind: "review",
+			id: sent.id,
+			action: "assess",
+			...expected,
+		});
+
+		socket.message({ kind: "review", id: sent.id, action: "assess", data: ASSESSMENT });
+		assert.deepEqual(await waiting, ASSESSMENT);
+	}
+});

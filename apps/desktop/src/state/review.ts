@@ -1,4 +1,4 @@
-import { isNothingPendingError } from "../lib/review-pending";
+import { isNothingPendingError, isUntrackedDeclarationError } from "../lib/review-pending";
 import { createSignal, untrack, type Accessor } from "solid-js";
 import type {
 	ReviewAssessment,
@@ -37,6 +37,8 @@ export interface ReviewView {
 	readonly assessmentError: string | null;
 	/** True when the provider's answer was "nothing uncommitted to assess", which is a state, not a failure. */
 	readonly assessmentPending: boolean;
+	/** True when untracked files refused the assessment; the declaration to offer rides on the status. */
+	readonly assessmentUntracked: boolean;
 	/** What just happened: a started review, a skipped change, a consent question waiting. */
 	readonly notice: string | null;
 }
@@ -50,6 +52,8 @@ export interface ReviewPanel {
 	refresh(): Promise<void>;
 	/** Assess pending changes, or committed work against `baseRef` when the tree is clean. */
 	assess(baseRef?: string): Promise<void>;
+	/** Assess with the untracked declaration the status on screen offered, when there is one. */
+	assessUntracked(): Promise<void>;
 	/** Start with the tokens the status on screen carries. */
 	start(): Promise<void>;
 	/** Answer the consent card by replaying the chosen invocation. */
@@ -65,6 +69,7 @@ const EMPTY_VIEW: ReviewView = {
 	error: null,
 	assessmentError: null,
 	assessmentPending: false,
+	assessmentUntracked: false,
 	notice: null,
 };
 
@@ -93,7 +98,16 @@ export function createReviewPanel(options: { readonly connect: () => BridgeClien
 			[status, mode] = await Promise.all([client.review({ action: "status" }), client.review({ action: "mode" })]);
 		} catch (error) {
 			if (current !== run || stopped) return;
-			setView((value) => ({ ...value, status: null, mode: null, assessment: null, loading: false, error: messageOf(error) }));
+			setView((value) => ({
+				...value,
+				status: null,
+				mode: null,
+				assessment: null,
+				loading: false,
+				error: messageOf(error),
+				assessmentPending: false,
+				assessmentUntracked: false,
+			}));
 			return;
 		}
 		if (current !== run || stopped) return;
@@ -107,28 +121,62 @@ export function createReviewPanel(options: { readonly connect: () => BridgeClien
 	/**
 	 * The risk a start would freeze, of pending changes or of committed work against a base.
 	 *
-	 * A clean tree makes the provider answer "no pending changes"; that is a state the panel offers an
-	 * action for, not a failure it colours red.
+	 * A clean tree makes the provider answer "no pending changes", and untracked files make it refuse
+	 * until it receives an explicit declaration; both are states the panel offers an action for, not
+	 * failures it colours red. The declaration tokens are the provider's own, relayed untouched.
 	 */
-	async function assess(baseRef?: string): Promise<void> {
+	async function assess(baseRef?: string, untracked?: readonly string[]): Promise<void> {
 		const client = options.connect();
 		if (client === null) return;
 		const current = run;
 		try {
-			const assessment = await client.review({ action: "assess", ...(baseRef === undefined ? {} : { baseRef }) });
+			const assessment = await client.review({
+				action: "assess",
+				...(baseRef === undefined ? {} : { baseRef }),
+				...(untracked === undefined ? {} : { untracked }),
+			});
 			if (current !== run || stopped) return;
-			setView((value) => ({ ...value, assessment, assessmentError: null, assessmentPending: false }));
+			setView((value) => ({
+				...value,
+				assessment,
+				assessmentError: null,
+				assessmentPending: false,
+				assessmentUntracked: false,
+			}));
 		} catch (error) {
 			if (current !== run || stopped) return;
 			const message = messageOf(error);
 			const pending = isNothingPendingError(message);
+			// Only the refusal to start is an offer. A declaration the user already sent that fails
+			// again is a plain failure, so the same action is not re-offered in a loop.
+			const untrackedOffer = untracked === undefined && isUntrackedDeclarationError(message);
 			setView((value) => ({
 				...value,
 				assessment: null,
-				assessmentError: pending ? null : message,
+				assessmentError: pending || untrackedOffer ? null : message,
 				assessmentPending: pending,
+				assessmentUntracked: untrackedOffer,
 			}));
 		}
+	}
+
+	/**
+	 * Assess with the declaration the provider's own status offered.
+	 *
+	 * The tokens are read from the status on screen, never rebuilt here. A status without a usable
+	 * selection has nothing this panel can run, and it says that instead of sending a guess.
+	 */
+	async function assessUntracked(): Promise<void> {
+		const tokens = untrack(() => view().status?.untracked?.tokens ?? []);
+		if (tokens.length === 0) {
+			setView((value) => ({
+				...value,
+				assessmentError:
+					"the provider did not offer an untracked-file declaration in this status; refresh before assessing",
+			}));
+			return;
+		}
+		await assess(undefined, tokens);
 	}
 
 	async function start(): Promise<void> {
@@ -190,7 +238,7 @@ export function createReviewPanel(options: { readonly connect: () => BridgeClien
 		run += 1;
 	}
 
-	return { view, consent, busy, assessmentPending: () => view().assessmentPending, refresh, assess, start, answer, stop };
+	return { view, consent, busy, assessmentPending: () => view().assessmentPending, refresh, assess, assessUntracked, start, answer, stop };
 }
 
 /**

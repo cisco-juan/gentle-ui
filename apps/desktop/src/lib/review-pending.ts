@@ -13,3 +13,15 @@ export function isNothingPendingError(message: string): boolean {
 
 /** The base the panel offers when the tree is clean: the commit the working tree sits on. */
 export const COMMITTED_BASE_REF = "HEAD~1";
+
+/**
+ * The provider's answer when untracked files make an assessment impossible without a declaration.
+ *
+ * The provider names the declaration in its own message: an inventory digest from `review status`
+ * plus either the excluded scope or the eligible paths. The panel must not invent either value, so
+ * this classifier only turns the refusal into a state; the declaration itself comes from the status
+ * answer's own selection binding.
+ */
+export function isUntrackedDeclarationError(message: string): boolean {
+	return message.toLowerCase().includes("untracked files require an explicit declaration");
+}

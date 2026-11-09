@@ -183,6 +183,19 @@ export interface ReviewTransition {
 }
 
 /**
+ * The untracked-file declaration the provider's own status transition offered.
+ *
+ * `tokens` is that selection binding rendered as the provider's own assess flags; the bridge derives
+ * it from the collect arguments, and the panel only relays it back. `paths` and `inventory` are the
+ * binding's values, kept for display so the panel can say what the declaration includes.
+ */
+export interface ReviewUntrackedDeclaration {
+	readonly inventory: string;
+	readonly paths: readonly string[];
+	readonly tokens: readonly string[];
+}
+
+/**
  * What the Review tab renders.
  *
  * `state` says whether the provider answered at all: `empty` means there is no repository to ask
@@ -207,6 +220,8 @@ export interface ReviewStatusView {
 	readonly authorityStale: boolean;
 	readonly frozen: ReviewFrozen | null;
 	readonly transition: ReviewTransition | null;
+	/** The untracked-file declaration the transition offered, or null when it offered none. */
+	readonly untracked: ReviewUntrackedDeclaration | null;
 	/** The untouched answer, present only when it could not be parsed. */
 	readonly raw: string | null;
 }
@@ -920,8 +935,15 @@ export type ClientMessage =
 	| { readonly kind: "fs"; readonly id: string; readonly action: "read"; readonly path: string }
 	/** Native review, always against the bridge's workspace. */
 	| { readonly kind: "review"; readonly id: string; readonly action: "status" | "mode" }
-	/** The risk a start would freeze; with a base ref, of committed work against that base. */
-	| { readonly kind: "review"; readonly id: string; readonly action: "assess"; readonly baseRef?: string }
+	/** The risk a start would freeze; with a base ref, of committed work against that base. `untracked`
+	 * relays the provider's own declaration when untracked files would otherwise refuse the assessment. */
+	| {
+			readonly kind: "review";
+			readonly id: string;
+			readonly action: "assess";
+			readonly baseRef?: string;
+			readonly untracked?: readonly string[];
+	  }
 	/** Start a review with the tokens its own status transition carried. */
 	| { readonly kind: "review"; readonly id: string; readonly action: "start"; readonly tokens: readonly string[] }
 	/** Answer the blocking consent question by replaying the chosen invocation. */

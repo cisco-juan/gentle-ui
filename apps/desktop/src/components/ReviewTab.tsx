@@ -140,7 +140,39 @@ function AssessmentBlock(props: { panel: ReviewPanel }): JSX.Element {
 					assess the last commit
 				</button>
 			</Show>
-			<Show when={!props.panel.assessmentPending() && view().assessmentError}>
+			{/* Untracked files are a declaration, not a failure: offer the provider's own selection. */}
+			<Show when={view().assessmentUntracked}>
+				<Show
+					when={view().status?.untracked}
+					fallback={
+						<p class="review-notice">
+							The provider refuses to assess while untracked files exist, but its status offered no declaration this
+							panel can relay. Refresh to ask it again.
+						</p>
+					}
+				>
+					{(untracked) => (
+						<>
+							<p class="review-notice">
+								The provider refuses to assess while untracked files exist. It offered a declaration that includes{" "}
+								{untracked().paths.length === 1 ? "one untracked file" : `${untracked().paths.length} untracked files`}.
+							</p>
+							<ul class="review-paths">
+								<For each={untracked().paths}>{(path) => <li class="mono">{path}</li>}</For>
+							</ul>
+							<button
+								type="button"
+								class="inspector-action"
+								disabled={view().loading}
+								onClick={() => void props.panel.assessUntracked()}
+							>
+								assess including the untracked files
+							</button>
+						</>
+					)}
+				</Show>
+			</Show>
+			<Show when={!props.panel.assessmentPending() && !view().assessmentUntracked && view().assessmentError}>
 				{(error) => <Clamped text={error()} />}
 			</Show>
 			<Show when={assessment()}>

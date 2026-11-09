@@ -30,7 +30,7 @@ type CloseListener = () => void;
 /** What the Review panel can ask the bridge for; each action answers with its own shape. */
 export type ReviewRequest =
 	| { readonly action: "status" }
-	| { readonly action: "assess" }
+	| { readonly action: "assess"; readonly baseRef?: string; readonly untracked?: readonly string[] }
 	| { readonly action: "mode" }
 	| { readonly action: "start"; readonly tokens: readonly string[] }
 	| { readonly action: "consent"; readonly invocation: string };
@@ -201,7 +201,11 @@ export class BridgeClient {
 	 * socket or builds a provider command line of its own.
 	 */
 	review(request: { readonly action: "status" }): Promise<ReviewStatusView>;
-	review(request: { readonly action: "assess" }): Promise<ReviewAssessment>;
+	review(request: {
+		readonly action: "assess";
+		readonly baseRef?: string;
+		readonly untracked?: readonly string[];
+	}): Promise<ReviewAssessment>;
 	review(request: { readonly action: "mode" }): Promise<ReviewMode>;
 	review(request: { readonly action: "start"; readonly tokens: readonly string[] }): Promise<ReviewStartView>;
 	review(request: { readonly action: "consent"; readonly invocation: string }): Promise<ReviewStartView>;
@@ -212,6 +216,17 @@ export class BridgeClient {
 		}
 		if (request.action === "consent") {
 			return this.#request<ReviewStartView>({ kind: "review", id, action: "consent", invocation: request.invocation });
+		}
+		if (request.action === "assess") {
+			// Both fields are optional and both must survive the trip: a spread the client forgets to
+			// forward is invisible until the provider answers about the wrong thing.
+			return this.#request<ReviewAssessment>({
+				kind: "review",
+				id,
+				action: "assess",
+				...(request.baseRef === undefined ? {} : { baseRef: request.baseRef }),
+				...(request.untracked === undefined ? {} : { untracked: request.untracked }),
+			});
 		}
 		return this.#request<ReviewAnswer>({ kind: "review", id, action: request.action });
 	}

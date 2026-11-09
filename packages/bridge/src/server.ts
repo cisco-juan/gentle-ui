@@ -430,7 +430,7 @@ export async function startBridgeServer(options: BridgeServerOptions = {}): Prom
 				kind: "review",
 				id: message.id,
 				action: "assess",
-				data: await reviewAssess(workspace, reviewOptions, message.baseRef),
+				data: await reviewAssess(workspace, reviewOptions, message.baseRef, message.untracked),
 			});
 			return;
 		}

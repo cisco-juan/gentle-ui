@@ -273,6 +273,84 @@ test("status reads the authority a lineage reports, which the plain answer never
 	]);
 });
 
+/** Inventory digest the provider issues for a tree with untracked files. */
+const UNTRACKED_INVENTORY = "sha256:cc090fa97db9cb7239a0572b1c12c94ecb94fe5417ee421e78337b49f8484926";
+
+/**
+ * The recorded shape of status when untracked files exist: a collect transition whose arguments are
+ * the provider's own intended-untracked selection binding. `paths` may be invalid on purpose.
+ */
+function untrackedStatus(paths: readonly string[], inventory: string | null = UNTRACKED_INVENTORY): string {
+	const argumentsList: { name: string; value: string }[] = [
+		{ name: "target_identity", value: "sha256:7eca20bca7ed7bc3be1455aec351ca8b6817272fb48d95771aa7936a6efd1720" },
+		{ name: "projection", value: "workspace" },
+		{ name: "base_tree", value: "005217268b4680838d10ccedebae0571182a64d9" },
+		{ name: "candidate_tree", value: "005217268b4680838d10ccedebae0571182a64d9" },
+		{ name: "eligible_paths_json", value: JSON.stringify(paths) },
+	];
+	if (inventory !== null) argumentsList.push({ name: "expected_untracked_inventory", value: inventory });
+
+	return JSON.stringify({
+		schema: "gentle-ai.review-integration.status/v2",
+		contract: REVIEW_CONTRACT,
+		operation: "review.status",
+		applicability: "unrelated",
+		action: "start",
+		target_identity: "sha256:7eca20bca7ed7bc3be1455aec351ca8b6817272fb48d95771aa7936a6efd1720",
+		projection: { projection: "workspace", paths: [] },
+		eligible_untracked_inventory: UNTRACKED_INVENTORY,
+		next_transition: {
+			kind: "collect",
+			reason_code: "intended_untracked_selection_required",
+			collect: {
+				inputs: [
+					{
+						name: "intended_untracked_selection",
+						schema: "gentle-ai.review-intended-untracked-selection/v1",
+						capture_operation: "external.select_intended_untracked",
+						arguments: argumentsList,
+					},
+				],
+			},
+		},
+	});
+}
+
+test("status relays the provider's own untracked selection as assess tokens", async (t) => {
+	const root = repository(t);
+	const cli = fakeCli(t, { "review status": { stdout: untrackedStatus(["apps/desktop/src/new.ts", "docs/notes.md"]) } });
+
+	const view = await reviewStatus(root, { binary: cli.binary });
+
+	assert.equal(view.transition?.reasonCode, "intended_untracked_selection_required");
+	assert.deepEqual(view.untracked, {
+		inventory: UNTRACKED_INVENTORY,
+		paths: ["apps/desktop/src/new.ts", "docs/notes.md"],
+		tokens: [
+			"--untracked-scope=select",
+			`--expected-untracked-inventory=${UNTRACKED_INVENTORY}`,
+			"--intended-untracked=apps/desktop/src/new.ts",
+			"--intended-untracked=docs/notes.md",
+		],
+	});
+});
+
+test("a status selection without a usable inventory and paths is not offered", async (t) => {
+	const root = repository(t);
+	const cli = fakeCli(t, { "review status": { stdout: untrackedStatus(["../escape.ts"]) } });
+
+	const escaped = await reviewStatus(root, { binary: cli.binary });
+	assert.equal(escaped.untracked, null);
+
+	cli.set({ "review status": { stdout: untrackedStatus(["docs/notes.md"], null) } });
+	const missing = await reviewStatus(root, { binary: cli.binary });
+	assert.equal(missing.untracked, null);
+
+	cli.set({ "review status": { fixture: "status-execute.json" } });
+	const none = await reviewStatus(root, { binary: cli.binary });
+	assert.equal(none.untracked, null);
+});
+
 test("status keeps the raw text when the answer is not the negotiated JSON", async (t) => {
 	const root = repository(t);
 	const raw = "review status: the provider printed prose instead\n";
@@ -640,4 +718,67 @@ test("a base ref that could be read as another flag is refused, not forwarded", 
 		);
 	}
 	assert.deepEqual(cli.calls(), []);
+});
+
+test("assess relays the declaration's own tokens after the base ref", async (t) => {
+	const root = repository(t);
+	const cli = fakeCli(t, { "review assess": { fixture: "assess.json" } });
+	const declaration = [
+		"--untracked-scope=select",
+		`--expected-untracked-inventory=${UNTRACKED_INVENTORY}`,
+		"--intended-untracked=docs/notes.md",
+	];
+
+	await reviewAssess(root, { binary: cli.binary }, "HEAD~1", declaration);
+
+	assert.deepEqual(cli.calls(), [
+		["review", "assess", "--cwd", root, "--json", "--base-ref", "HEAD~1", ...declaration],
+	]);
+});
+
+test("an assess declaration that is not an untracked provider token is refused before the provider runs", async (t) => {
+	const root = repository(t);
+	const cli = fakeCli(t, { "review assess": { fixture: "assess.json" } });
+	const elsewhere = join(scratch(t), "elsewhere");
+	const cases: readonly (readonly [readonly string[], RegExp])[] = [
+		[["not-a-flag"], /is not a --flag/],
+		[["--consent=granted"], /must not answer consent/],
+		[[`--cwd=${elsewhere}`], /targets a different workspace/],
+		[["--base-ref=main"], /not an untracked declaration/],
+	];
+
+	for (const [tokens, message] of cases) {
+		await assert.rejects(() => reviewAssess(root, { binary: cli.binary }, undefined, tokens), message);
+	}
+	assert.deepEqual(cli.calls(), [], "the provider must not run for a refused declaration");
+});
+
+test("the bridge relays an assess declaration and a base ref from the wire to the provider", async (t) => {
+	const root = repository(t);
+	const cli = fakeCli(t, { "review assess": { fixture: "assess.json" } });
+	const server = await startBridgeServer({ workspace: root, review: { binary: cli.binary } });
+	const ws = new WebSocket(`ws://127.0.0.1:${server.port}/?token=${server.token}`);
+	const declaration = [
+		"--untracked-scope=select",
+		`--expected-untracked-inventory=${UNTRACKED_INVENTORY}`,
+		"--intended-untracked=docs/notes.md",
+	];
+	try {
+		await new Promise((resolve) => ws.on("open", resolve));
+		const answered = next(ws, (message) => message.kind === "review" && message.id === "review-assess");
+		ws.send(
+			JSON.stringify({ kind: "review", id: "review-assess", action: "assess", baseRef: "HEAD~1", untracked: declaration }),
+		);
+
+		const message = await answered;
+		assert.equal(message.kind, "review");
+		if (message.kind !== "review") return;
+		assert.equal(message.action, "assess");
+		assert.deepEqual(cli.calls(), [
+			["review", "assess", "--cwd", root, "--json", "--base-ref", "HEAD~1", ...declaration],
+		]);
+	} finally {
+		ws.close();
+		await server.close();
+	}
 });

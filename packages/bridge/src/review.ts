@@ -14,6 +14,7 @@ import type {
 	ReviewStatusView,
 	ReviewTransition,
 	ReviewTransitionKind,
+	ReviewUntrackedDeclaration,
 } from "@gentle-shell/protocol";
 import { defaultExtensionCandidates, resolvePiEnvironment } from "./pi-environment.ts";
 
@@ -151,8 +152,9 @@ export async function reviewAssess(
 	root: string,
 	options: ReviewOptions = {},
 	baseRef?: string,
+	untracked?: readonly string[],
 ): Promise<ReviewAssessment> {
-	const raw = await runJson(resolveReviewBinary(options), assessArgv(root, baseRef), root, options);
+	const raw = await runJson(resolveReviewBinary(options), assessArgv(root, baseRef, untracked), root, options);
 	const record = asRecord(parseJson(raw));
 	if (record === null) {
 		throw new Error(`the provider answered review assess with text that is not the JSON this panel reads: ${excerpt(raw)}`);
@@ -343,6 +345,7 @@ export function parseReviewStatus(raw: string, repository: string): ReviewStatus
 		authorityStale: false,
 		frozen: parseFrozen(record.frozen),
 		transition: transition.transition,
+		untracked: parseUntrackedDeclaration(record.next_transition),
 		raw: null,
 	};
 }
@@ -359,21 +362,24 @@ function statusArgv(root: string, lineage: string | null): string[] {
 }
 
 /**
- * `review assess`, optionally against a base commit.
+ * `review assess`, optionally against a base commit and with the provider's untracked declaration.
  *
  * With nothing uncommitted the provider answers that the candidate has no pending changes and names
- * `--base-ref` as the way to assess committed work. That ref arrives from the panel, so it is checked
- * here: a value that could be read as another option is refused rather than forwarded.
+ * `--base-ref` as the way to assess committed work. With untracked files it refuses until it is given
+ * its own selection binding. Both arrive from the panel, so both are checked here: a value or token
+ * that could be read as another option is refused rather than forwarded.
  */
-function assessArgv(root: string, baseRef?: string): string[] {
+function assessArgv(root: string, baseRef?: string, untracked?: readonly string[]): string[] {
 	const argv = ["review", "assess", "--cwd", root, "--json"];
-	if (baseRef === undefined) return argv;
-	const ref = baseRef.trim();
-	if (ref.length === 0) throw new Error("a base ref must name a commit, not be empty");
-	if (ref.startsWith("-") || /\s/.test(ref)) {
-		throw new Error(`the base ref ${JSON.stringify(ref)} is not a single commit reference`);
+	if (baseRef !== undefined) {
+		const ref = baseRef.trim();
+		if (ref.length === 0) throw new Error("a base ref must name a commit, not be empty");
+		if (ref.startsWith("-") || /\s/.test(ref)) {
+			throw new Error(`the base ref ${JSON.stringify(ref)} is not a single commit reference`);
+		}
+		argv.push("--base-ref", ref);
 	}
-	argv.push("--base-ref", ref);
+	argv.push(...untrackedArgv(untracked, root));
 	return argv;
 }
 
@@ -386,19 +392,48 @@ function startArgv(tokens: readonly string[], root: string): string[] {
 	if (!Array.isArray(tokens) || tokens.length === 0) {
 		throw new Error("a review start needs the tokens its status transition provided");
 	}
-	for (const token of tokens) {
-		if (typeof token !== "string" || !token.startsWith("--") || token.includes("\0")) {
-			throw new Error(`the review token ${JSON.stringify(token)} is not a --flag and will not be forwarded`);
-		}
-		if (token === "--consent" || token.startsWith("--consent=")) {
-			throw new Error("the review tokens must not answer consent; the panel always relays it");
-		}
-		// The renderer is untrusted input: a token must not be able to point the review at another repo.
-		if (token.startsWith("--cwd=") && !sameRoot(token.slice("--cwd=".length), root)) {
-			throw new Error(`the review token targets a different workspace: ${token.slice("--cwd=".length)}`);
-		}
-	}
+	for (const token of tokens) assertProviderToken(token, root);
 	return ["review", "start", ...tokens, "--consent", "relay"];
+}
+
+/** The three flags a provider's untracked selection binding can become on `review assess`. */
+const UNTRACKED_FLAGS = [
+	"--untracked-scope=",
+	"--expected-untracked-inventory=",
+	"--intended-untracked=",
+] as const;
+
+/**
+ * The untracked declaration, as the provider's own assess flags.
+ *
+ * The tokens are validated with the same rules as a start's, and then narrowed to the declaration:
+ * the panel is untrusted input and must not be able to smuggle another provider option onto assess.
+ */
+function untrackedArgv(tokens: readonly string[] | undefined, root: string): string[] {
+	if (tokens === undefined || tokens.length === 0) return [];
+	const argv: string[] = [];
+	for (const token of tokens) {
+		assertProviderToken(token, root);
+		if (!UNTRACKED_FLAGS.some((flag) => token.startsWith(flag))) {
+			throw new Error(`the review token ${JSON.stringify(token)} is not an untracked declaration and will not be forwarded`);
+		}
+		argv.push(token);
+	}
+	return argv;
+}
+
+/** One provider token: a flag this bridge can forward, never consent, never another workspace. */
+function assertProviderToken(token: unknown, root: string): asserts token is string {
+	if (typeof token !== "string" || !token.startsWith("--") || token.includes("\0")) {
+		throw new Error(`the review token ${JSON.stringify(token)} is not a --flag and will not be forwarded`);
+	}
+	if (token === "--consent" || token.startsWith("--consent=")) {
+		throw new Error("the review tokens must not answer consent; the panel always relays it");
+	}
+	// The renderer is untrusted input: a token must not be able to point the review at another repo.
+	if (token.startsWith("--cwd=") && !sameRoot(token.slice("--cwd=".length), root)) {
+		throw new Error(`the review token targets a different workspace: ${token.slice("--cwd=".length)}`);
+	}
 }
 
 /** Compare two paths as workspaces, tolerating a trailing slash and a relative form. */
@@ -715,6 +750,99 @@ function parseCollect(value: unknown): readonly ReviewCollectInput[] {
 	}));
 }
 
+/** The six arguments the provider's intended-untracked selection binding must carry. */
+const UNTRACKED_ARGUMENTS = [
+	"target_identity",
+	"projection",
+	"base_tree",
+	"candidate_tree",
+	"eligible_paths_json",
+	"expected_untracked_inventory",
+] as const;
+
+/**
+ * The declaration the provider's own collect transition offered, or null.
+ *
+ * Only the provider's `external.select_intended_untracked` binding can produce tokens: the inventory
+ * digest and the eligible paths are read from its arguments, never synthesized. A binding that is
+ * incomplete, names another projection, or carries a path this bridge cannot forward is not offered,
+ * so the panel says the provider offered nothing it can run instead of guessing.
+ */
+function parseUntrackedDeclaration(value: unknown): ReviewUntrackedDeclaration | null {
+	const transition = asRecord(value);
+	if (transition === null || transition.kind !== "collect") return null;
+	const collect = asRecord(transition.collect);
+	if (collect === null) return null;
+
+	for (const entry of records(collect.inputs)) {
+		if (
+			text(entry.name) !== "intended_untracked_selection" ||
+			text(entry.capture_operation) !== "external.select_intended_untracked"
+		) {
+			continue;
+		}
+
+		const argumentsMap = untrackedArguments(entry.arguments);
+		if (argumentsMap === null || argumentsMap["projection"] !== REVIEW_PROJECTION) return null;
+		const inventory = argumentsMap["expected_untracked_inventory"];
+		const paths = untrackedPaths(argumentsMap["eligible_paths_json"]);
+		if (inventory === undefined || paths === null || !/^sha256:[0-9a-f]{64}$/.test(inventory)) return null;
+
+		return {
+			inventory,
+			paths,
+			tokens: [
+				"--untracked-scope=select",
+				`--expected-untracked-inventory=${inventory}`,
+				...paths.map((path) => `--intended-untracked=${path}`),
+			],
+		};
+	}
+	return null;
+}
+
+/** The binding's arguments, only when it carries exactly the six names and no tokens. */
+function untrackedArguments(value: unknown): Readonly<Record<string, string>> | null {
+	if (!Array.isArray(value) || value.length !== UNTRACKED_ARGUMENTS.length) return null;
+	const assignments: Record<string, string> = {};
+	for (const entry of value) {
+		const argument = asRecord(entry);
+		if (argument === null || argument.token !== undefined) return null;
+		const name = text(argument.name);
+		const argumentValue = text(argument.value);
+		if (name === null || argumentValue === null || !(UNTRACKED_ARGUMENTS as readonly string[]).includes(name)) return null;
+		if (Object.hasOwn(assignments, name)) return null;
+		assignments[name] = argumentValue;
+	}
+	return assignments;
+}
+
+/** The eligible paths JSON, only when every entry is a unique repository-relative path. */
+function untrackedPaths(value: string | undefined): readonly string[] | null {
+	if (value === undefined) return null;
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(value) as unknown;
+	} catch {
+		return null;
+	}
+	if (!Array.isArray(parsed) || parsed.length === 0) return null;
+
+	const paths: string[] = [];
+	for (const entry of parsed) {
+		if (typeof entry !== "string" || !isRepositoryRelativePath(entry) || paths.includes(entry)) return null;
+		paths.push(entry);
+	}
+	return paths;
+}
+
+/** A path the provider's assess flag can carry: relative, forward-slashed, no traversal segments. */
+function isRepositoryRelativePath(path: string): boolean {
+	if (path.length === 0 || path.startsWith("/") || path.includes("\\") || path.includes("\0")) return false;
+	if (/^[A-Za-z]:\//.test(path)) return false;
+	return path.split("/").every((segment) => segment.length > 0 && segment !== "." && segment !== "..");
+}
+
 /**
  * An authority the panel can render, or null.
  *
@@ -881,6 +1009,7 @@ function emptyStatus(
 		authorityStale: false,
 		frozen: null,
 		transition: null,
+		untracked: null,
 		raw: null,
 	};
 }
@@ -901,6 +1030,7 @@ function unreadableStatus(repository: string, raw: string, message: string): Rev
 		authorityStale: false,
 		frozen: null,
 		transition: null,
+		untracked: null,
 		raw,
 	};
 }
