@@ -268,7 +268,7 @@ T39 [x] The Review panel must not report a provider error as its own state when 
     `baseRef: "HEAD~1"` answers a real assessment (`kind=base-diff`), where the bare call answers the
     nothing-pending message. Reaching that took fixing the client too — see T40 and L20.
 
-T41 [~] The Review panel runs a lens: fetch the provider's own lens context, run the reviewer, and submit the
+T41 [x] The Review panel runs a lens: fetch the provider's own lens context, run the reviewer, and submit the
     result. S1
     Contract read from the provider, not guessed: `review lens-context` emits "the finished reviewer lens context
     for one selected lens" and states that "every token is carried verbatim by the collect transition; nothing else
@@ -284,9 +284,18 @@ T41 [~] The Review panel runs a lens: fetch the provider's own lens context, run
     `--token`, `--cwd`. 192 desktop and 249 bridge green, including a wire-JSON test for all four shapes.
     Still open: the panel half — fetch the context, run the reviewer with the thread's model, submit with the dry
     run first.
-    Unobserved and recorded as such: the success shape of `lens-context` and of a real admission, because producing
-    either needs a real open capture, which this pass refused to run. Both views relay the provider's stdout verbatim
-    and claim nothing about its fields.
+    Panel half landed (`144534d`): one lens, walked in the provider's own order — `lens-context` with the transition's
+    tokens untouched, `reviewer-run` with the context and the thread's model, `capture-result` with the reviewer's
+    answer and `dryRun: true` — with the answer required to be the submission's JSON object or nothing is submitted,
+    and `--input`/`--preflight` documented at both call sites as the bridge's own flags.
+    Verified on screen across every state reachable without spending: the transition block, the base-ref state, the
+    untracked-declaration state. **Not exercised: the lens surface itself**, because it only appears inside a started
+    review and reaching that state spends the user's credits; that path is unit-tested (five new pure tests) and
+    typechecked, and the dry-run block is designed to say "nothing captured, nothing approved" out loud.
+    Unobserved and recorded as such: the success shape of `lens-context` and of a real admission. Both views relay the
+    provider's stdout verbatim and claim nothing about its fields. `subject_hash, inspection, findings, evidence` are
+    the submission fields taken from this repo's recorded reviewer results; if the provider makes `evidence` optional,
+    a valid answer would be refused — failing closed, which is the right direction.
 
 T43 [x] The bridge runs a reviewer: a one-shot, sessionless `pi --print` against the lens context the provider
     emitted, returning its verdict text. S1
