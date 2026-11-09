@@ -254,17 +254,27 @@ T39 [x] The Review panel must not report a provider error as its own state when 
     Seen on screen once the browser came back: the RISK block reads "Nothing is uncommitted, so there are no
     pending changes to assess. The last commit can be assessed against its parent." with the action beside it,
     and no `.inspector-error` anywhere in the panel.
-    Not seen: the action's own result. Probing the running bridge with four bases (`HEAD~1`, `HEAD^`, `main`,
-    and none) shows the provider answering **every** one of them with
-    "untracked files require an explicit declaration" while the tree holds untracked files — which is the case
-    whenever another writer is mid-edit. So the button's success path cannot be observed on a dirty tree, and
-    on a clean one it still has to be re-probed.
+    The action's own result is now proven twice over. Through the real client, in the app, on a clean tree: the
+    panel went from "Nothing is uncommitted…" to `tier medium · changed 10 paths · 540 lines · review due no ·
+    why under_budget` with an `executable_change` reason, and no error. And at the provider: `assess` with
+    `baseRef: "HEAD~1"` answers a real assessment (`kind=base-diff`), where the bare call answers the
+    nothing-pending message. Reaching that took fixing the client too — see T40 and L20.
 
-T40 [ ] The Review panel must offer the untracked-file declaration. S1 S10
+T40 [x] The Review panel must offer the untracked-file declaration. S1 S10
     Found while probing T39: an untracked file anywhere in the clone makes the provider refuse an assessment
     **even with a base ref**, so "assess the last commit" cannot succeed while one exists. The provider names the
     command in its message; the panel should offer it as the action it already does for a clean tree, instead of
     printing the refusal. This is a prerequisite of T39's button working, not a nice-to-have.
+    The bridge relays only the provider's own `intended_untracked_selection` binding — `target_identity`,
+    `projection`, `base_tree`, `candidate_tree`, `eligible_paths_json`, `expected_untracked_inventory` — and
+    derives `--untracked-scope=select --expected-untracked-inventory=… --intended-untracked=…` from it, refusing
+    any other token (a non-flag, `--consent`, a foreign `--cwd`, or something that is not an untracked flag). When
+    status offers no usable selection the panel says so and offers nothing.
+    `BridgeClient.review()` was dropping every field but `action`; it now forwards `baseRef` and the declaration,
+    with a test pinning the exact wire JSON for all four shapes.
+    Verified live against the real provider on a scratch workspace holding one untracked file: status carried
+    `intended_untracked_selection_required` with the digest and paths, and assess with those tokens answered
+    `medium · 1 path · 1 line`. 185 desktop and 241 bridge tests green, RED first on every new test.
 
 T38 [x] The rose honours the harness's own `banner.json` and `animations.json` at runtime (shown/hidden, colour,
     policy), which needs one read the webview cannot make by itself. S22
@@ -486,6 +496,15 @@ T28 [x] A thread opens showing the oldest row of its first page for a moment bef
 Observation while closing T20: `profiles.json` holds a profile literally named `NaN`, next to `current`,
 `Claude-Grok`, `OnlyGrok` and `grok-opencode`. The UI renders it faithfully, so it is data, not a display bug — most
 likely created by an earlier session from a numeric parse. Left untouched: deleting a profile is the user's call.
+
+L22. 2026-11-09. T39 and T40 are closed by the same proof, and it is worth writing down what that proof is,
+because the earlier claim was wrong. In the running app, on a clean tree, the Review panel showed "Nothing is
+uncommitted…"; clicking "assess the last commit" replaced it with `tier medium · changed 10 paths · 540 lines ·
+review due no · why under_budget` and a reason line, with no error in the panel and none in the console. At the
+bridge, the same call shape returns `candidateKind=base-diff`, and the bare call returns the nothing-pending
+message. With an untracked file present, status carries `intended_untracked_selection_required` and the assess
+call with the relayed tokens answers a real assessment. That is three paths — panel, wire, provider — agreeing,
+which is what the earlier "the bridge forwards it" never established.
 
 L21. 2026-11-09. A commit message lies about its own content and it will stay that way, deliberately. `4294e8b`
 is titled "docs(odd): record the silent field drop behind T39 and what it taught" and it also carries 344 lines of
