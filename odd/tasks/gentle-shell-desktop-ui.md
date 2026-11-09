@@ -288,7 +288,7 @@ T41 [~] The Review panel runs a lens: fetch the provider's own lens context, run
     either needs a real open capture, which this pass refused to run. Both views relay the provider's stdout verbatim
     and claim nothing about its fields.
 
-T43 [ ] The bridge runs a reviewer: a one-shot, sessionless `pi --print` against the lens context the provider
+T43 [x] The bridge runs a reviewer: a one-shot, sessionless `pi --print` against the lens context the provider
     emitted, returning its verdict text. S1
     The wire half exposed `lens-context` but nothing that produces a result worth capturing, and the panel must not
     run a prompt inside the user's open thread — that would spend their context and pollute the transcript with
@@ -296,6 +296,14 @@ T43 [ ] The bridge runs a reviewer: a one-shot, sessionless `pi --print` against
     the reviewer can run in its own throwaway process, with the model the user already selected and no session file
     left behind. Cost is the user's, so a real run stays behind the panel's confirmation and the provider's
     `--preflight` still proves the submission before anything is admitted.
+    Landed (`40fa89d`): `pi --print --no-session --model <model> -- <context>`, its own process group, a 300s
+    timeout that kills the tree and rejects rather than reporting empty text, a 200k-character cap with a
+    `truncated` flag, and a test that points the agent home at a scratch directory and proves no session was
+    written. Every test uses a generated fake `pi`: no model was called, no credit spent. 193 desktop and 256
+    bridge green. The tree-kill test was shown not to be self-confirming by breaking the group kill on purpose.
+    Known limits, recorded: the prompt on argv is bounded by the OS (about 32 KB per command line on Windows), the
+    Windows `taskkill /T /F` path is unexercised here, and real `pi --print` output framing is unobserved until
+    someone runs a real lens.
 
 T42 [ ] Acknowledgement from the panel, behind an explicit confirmation. S1
     Decision (user, 2026-11-09): "si, ambas" — the lenses run from the UI and the acknowledgement may be given
