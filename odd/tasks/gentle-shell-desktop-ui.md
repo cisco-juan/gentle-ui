@@ -237,6 +237,17 @@ T36 [x] Closing the left sidebar shrinks it to an icon rail instead of removing 
     keep a name through `aria-label` plus a tooltip. The toggle is reachable in both states and dragging the
     divider out expands the rail. The old `railOpen: false` state migrates to collapsed. Verified in the app:
     268 -> 56 -> 268.
+T39 [ ] The Review panel must not report a provider error as its own state when the real answer is "there is
+    nothing uncommitted to assess". S1 S10
+    Reproduced from a screenshot of the panel: `review assess failed (exit 1): Error: the review assess
+    candidate has no pending changes; already-committed work can be assessed by rerunning
+    \`gentle-ai review assess --base-ref <commit>\` naming the base to compare against`, shown in red under
+    RISK with `COLLECT empty_candidate_base_ref_required` below it. The panel asks for an assessment of
+    pending changes on every open, and after every commit there are none.
+    Fix: the bridge forwards an optional `--base-ref` (refusing anything that could be read as another flag),
+    the panel recognises this answer as "nothing pending" instead of an error, and offers the committed
+    assessment it can actually run — the previous commit as the base — with the same read-only guarantees.
+
 T38 [ ] The rose honours the harness's own `banner.json` and `animations.json` at runtime (shown/hidden, colour,
     policy), which needs one read the webview cannot make by itself. S22
     Deliberately split from T34 so the art landing did not wait on a new wire family.
@@ -443,6 +454,12 @@ T28 [x] A thread opens showing the oldest row of its first page for a moment bef
 Observation while closing T20: `profiles.json` holds a profile literally named `NaN`, next to `current`,
 `Claude-Grok`, `OnlyGrok` and `grok-opencode`. The UI renders it faithfully, so it is data, not a display bug — most
 likely created by an earlier session from a numeric parse. Left untouched: deleting a profile is the user's call.
+
+L18. 2026-11-08. The user reported the Review panel turning red on its own: "arreglar este bug", with a
+screenshot showing the provider's own message about a candidate with no pending changes and the
+`empty_candidate_base_ref_required` transition. Queued as T39. The bridge half is written first because it
+does not collide with the appearance unit in flight; the protocol, router and panel changes wait for that
+worker to release those files rather than two writers editing them at once.
 
 Slice boundary, 2026-11-08: `develop` reached 1314 authored lines over 6 commits since `main` with the rename
 and the styles work (`23f90e4`). The next unit — the appearance family for themes and the banner config — starts a

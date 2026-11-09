@@ -623,3 +623,21 @@ test("the bridge answers a review request it cannot serve with a typed error", a
 		await server.close();
 	}
 });
+
+test("assess can be pointed at a base commit, so committed work is assessable", async (t) => {
+	const root = repository(t);
+	const cli = fakeCli(t, { "review assess": { fixture: "assess.json" } });
+	await reviewAssess(root, { binary: cli.binary }, "HEAD~1");
+	assert.deepEqual(cli.calls(), [["review", "assess", "--cwd", root, "--json", "--base-ref", "HEAD~1"]]);
+});
+
+test("a base ref that could be read as another flag is refused, not forwarded", async (t) => {
+	const root = repository(t);
+	const cli = fakeCli(t, { "review assess": { fixture: "assess.json" } });
+	for (const bad of ["--cwd", "-x", "HEAD --json", "", "HEAD\n~1"]) {
+		await assert.rejects(() => reviewAssess(root, { binary: cli.binary }, bad), (error: Error) =>
+			error.message.includes("base ref"),
+		);
+	}
+	assert.deepEqual(cli.calls(), []);
+});

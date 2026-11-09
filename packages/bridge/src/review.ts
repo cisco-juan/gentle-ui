@@ -147,8 +147,12 @@ export async function reviewStatus(root: string, options: ReviewOptions = {}): P
 }
 
 /** The read-only risk a start would freeze. */
-export async function reviewAssess(root: string, options: ReviewOptions = {}): Promise<ReviewAssessment> {
-	const raw = await runJson(resolveReviewBinary(options), assessArgv(root), root, options);
+export async function reviewAssess(
+	root: string,
+	options: ReviewOptions = {},
+	baseRef?: string,
+): Promise<ReviewAssessment> {
+	const raw = await runJson(resolveReviewBinary(options), assessArgv(root, baseRef), root, options);
 	const record = asRecord(parseJson(raw));
 	if (record === null) {
 		throw new Error(`the provider answered review assess with text that is not the JSON this panel reads: ${excerpt(raw)}`);
@@ -354,8 +358,23 @@ function statusArgv(root: string, lineage: string | null): string[] {
 	return argv;
 }
 
-function assessArgv(root: string): string[] {
-	return ["review", "assess", "--cwd", root, "--json"];
+/**
+ * `review assess`, optionally against a base commit.
+ *
+ * With nothing uncommitted the provider answers that the candidate has no pending changes and names
+ * `--base-ref` as the way to assess committed work. That ref arrives from the panel, so it is checked
+ * here: a value that could be read as another option is refused rather than forwarded.
+ */
+function assessArgv(root: string, baseRef?: string): string[] {
+	const argv = ["review", "assess", "--cwd", root, "--json"];
+	if (baseRef === undefined) return argv;
+	const ref = baseRef.trim();
+	if (ref.length === 0) throw new Error("a base ref must name a commit, not be empty");
+	if (ref.startsWith("-") || /\s/.test(ref)) {
+		throw new Error(`the base ref ${JSON.stringify(ref)} is not a single commit reference`);
+	}
+	argv.push("--base-ref", ref);
+	return argv;
 }
 
 function modeArgv(root: string): string[] {
