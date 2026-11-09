@@ -216,13 +216,31 @@ T27 [x] Chat history loads progressively with the scroll instead of arriving who
     opening, and scrolling up brought the next 40 entries to 152 rows while the reader stayed put.
     Risk: item 3 (a new protocol family) — one reader, no unreadable path outside the session root.
 
-T33 [ ] Rename the product to Gentle UI: `productName`, bundle identifier, window title, installer and
+T33 [x] Rename the product to Gentle UI: `productName`, bundle identifier, window title, installer and
     artifact names, and the readme's own name. The harness stays Gentle Shell; only what names *this*
     product changes. S21
-T34 [ ] A chat start shows the Gentle Shell rose the way the TUI does. S22
-T35 [ ] The sidebar carries the product's branding. S23
-T36 [ ] Closing the left sidebar shrinks it to an icon rail instead of removing it; the collapse is a mode,
+T34 [x] A chat start shows the Gentle Shell rose the way the TUI does. S22
+    The art is copied verbatim from gentle-pi's `extensions/startup-banner.ts` (17 lines, not 18 as the
+    explorer first counted — 17 is what the harness holds and what is asserted), with the same palette, fade,
+    flash and shimmer, and the three `animations.json` policies. It draws on a chat start only, is
+    `aria-hidden`, and reserves its box. One real bug came out of looking at it: `.rose-banner` measured its
+    own width (112px), which is below the width rule, so only the wordmark ever drew; it spans the column now.
+    Verified in the app: 17 rows, first line ending `⣠⣾⣷⣶⣦⣤⣤⣄⣠⣄⣀`, identical to the terminal.
+    Still open, split out as T38: the harness's own `banner.json` and `animations.json` are not read at runtime
+    yet — the webview has no file access, so the app draws the documented defaults.
+T35 [x] The sidebar carries the product's branding. S23
+    `✿ Gentle UI` in the rail header, in both modes, using the terminal's own prompt glyph and existing colour
+    tokens; the narrow fallback reads `✿ Gentle UI ✿`. Verified in the app.
+T36 [x] Closing the left sidebar shrinks it to an icon rail instead of removing it; the collapse is a mode,
     not a disappearance. S24
+    Two modes persisted beside the layout width: full rail, or a 56px icon rail (clamped 48-96) whose buttons
+    keep a name through `aria-label` plus a tooltip. The toggle is reachable in both states and dragging the
+    divider out expands the rail. The old `railOpen: false` state migrates to collapsed. Verified in the app:
+    268 -> 56 -> 268.
+T38 [ ] The rose honours the harness's own `banner.json` and `animations.json` at runtime (shown/hidden, colour,
+    policy), which needs one read the webview cannot make by itself. S22
+    Deliberately split from T34 so the art landing did not wait on a new wire family.
+
 T37 [ ] Themes come from Gentle Shell's configuration: the UI reads the selected theme and follows it, and a
     change of theme there changes the UI. S25
 
@@ -425,6 +443,10 @@ T28 [x] A thread opens showing the oldest row of its first page for a moment bef
 Observation while closing T20: `profiles.json` holds a profile literally named `NaN`, next to `current`,
 `Claude-Grok`, `OnlyGrok` and `grok-opencode`. The UI renders it faithfully, so it is data, not a display bug — most
 likely created by an earlier session from a numeric parse. Left untouched: deleting a profile is the user's call.
+
+Slice boundary, 2026-11-08: `develop` reached 1314 authored lines over 6 commits since `main` with the rename
+and the styles work (`23f90e4`). The next unit — the appearance family for themes and the banner config — starts a
+new slice and is not stacked on this one.
 
 L17. 2026-11-08. The user accepted publishing and asked for the product name to become Gentle UI
 ("vamos a cambiarla a Gentle UI todo lo relacionado con el nombre"), but wants styles first:
