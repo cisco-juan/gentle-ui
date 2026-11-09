@@ -1,4 +1,4 @@
-import { For, Show, createMemo, createSignal, onCleanup, type JSX } from "solid-js";
+import { For, Show, createMemo, createSignal, onCleanup, type Accessor, type JSX } from "solid-js";
 import "../inspector.css";
 import { agentCountsLabel, agentDuration } from "../lib/agents";
 import {
@@ -29,9 +29,10 @@ type OwnedTab = "review" | "memory";
  * tree with a read-only preview, the ODD task lists, and the subagent activity the agent publishes.
  * Review (native review, RDD) and Memory (Engram, read-only) each own their state module and their
  * scroller. The panel owns no shell state — it is mounted into the parent's grid and only speaks to
- * the bridge through the chat controller it is given.
+ * the bridge through the chat controller it is given. `model` is the thread's model, passed down from
+ * the shell: the Review panel runs a reviewer on it, and the panel must not reach for it itself.
  */
-export function Inspector(props: { chat: ChatControllerLike; onClose?: () => void }): JSX.Element {
+export function Inspector(props: { chat: ChatControllerLike; model: Accessor<string>; onClose?: () => void }): JSX.Element {
 	const inspector = createInspector({ connect: () => props.chat.bridge(), activePath: () => props.chat.activePath() });
 	const review = createReviewPanel({ connect: () => props.chat.bridge() });
 	const memory = createMemoryPanel({ connect: () => props.chat.bridge() });
@@ -125,7 +126,7 @@ export function Inspector(props: { chat: ChatControllerLike; onClose?: () => voi
 					<SkeletonLines count={6} label="Waiting for the agent" />
 				</Show>
 				<Show when={ready() && ownedTab() === "review"}>
-					<ReviewTab review={review} />
+					<ReviewTab review={review} model={props.model} />
 				</Show>
 				<Show when={ready() && ownedTab() === "memory"}>
 					<MemoryTab memory={memory} />
