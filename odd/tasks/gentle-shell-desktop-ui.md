@@ -268,7 +268,7 @@ T39 [x] The Review panel must not report a provider error as its own state when 
     `baseRef: "HEAD~1"` answers a real assessment (`kind=base-diff`), where the bare call answers the
     nothing-pending message. Reaching that took fixing the client too — see T40 and L20.
 
-T41 [ ] The Review panel runs a lens: fetch the provider's own lens context, run the reviewer, and submit the
+T41 [~] The Review panel runs a lens: fetch the provider's own lens context, run the reviewer, and submit the
     result. S1
     Contract read from the provider, not guessed: `review lens-context` emits "the finished reviewer lens context
     for one selected lens" and states that "every token is carried verbatim by the collect transition; nothing else
@@ -277,6 +277,16 @@ T41 [ ] The Review panel runs a lens: fetch the provider's own lens context, run
     `operation: review/capture-result`, `lineage_id`, `lens`, `selected_order`, `subject_hash`,
     `admission_decision`, `validation`). The reviewer's model is the thread's current model unless the user
     changes it here, and every submission is proven with the provider's dry run before it is admitted for real.
+    Wire half landed (`754197b`): `lens-context`, `capture-result` and `acknowledge-approved` behind one token gate,
+    with the provider's real flags read rather than guessed — `capture-result` takes the result on stdin
+    (`--input -`) and its dry run is `--preflight`; `acknowledge-approved` has no `--help` at all (it exits silently)
+    so its accepted set was established by probing the Go parser: `--lineage`, `--target`, `--expected-revision`,
+    `--token`, `--cwd`. 192 desktop and 249 bridge green, including a wire-JSON test for all four shapes.
+    Still open: the panel half — fetch the context, run the reviewer with the thread's model, submit with the dry
+    run first.
+    Unobserved and recorded as such: the success shape of `lens-context` and of a real admission, because producing
+    either needs a real open capture, which this pass refused to run. Both views relay the provider's stdout verbatim
+    and claim nothing about its fields.
 
 T42 [ ] Acknowledgement from the panel, behind an explicit confirmation. S1
     Decision (user, 2026-11-09): "si, ambas" — the lenses run from the UI and the acknowledgement may be given
